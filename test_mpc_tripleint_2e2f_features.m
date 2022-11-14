@@ -189,14 +189,15 @@ end
 
 % Create a plot of the relative errors on a logscale
 
-figure(1); clf;
-plot(0:(NTST-1),log10(relinferrs),'o-.');
-legend('errf','errx','erru');
+figure(1); clf; hold on;
+plot(0:(NTST-1),log10(relinferrs(:, 1)),'ko-.');
+plot(0:(NTST-1),log10(relinferrs(:, 2)),'bs-.');
+plot(0:(NTST-1),log10(relinferrs(:, 3)),'rd-.');
 title('Relative inf-norm errors');
 xlabel('Test Index');
 ylabel('Base-10 logarithm of (relative) error');
-hold on;
 line([0,NTST-1],[1,1]*log10(RELERRFOK),'Color','k','LineStyle','-');
 line([0,NTST-1],[1,1]*log10(RELERRXOK),'Color','b','LineStyle','-');
 line([0,NTST-1],[1,1]*log10(RELERRUOK),'Color','r','LineStyle','-');
 A=axis(); axis([0,NTST-1,A(3),A(4)]);
+legend('errf','errx','erru');
