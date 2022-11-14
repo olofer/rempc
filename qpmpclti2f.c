@@ -47,7 +47,6 @@
 #include <time.h>
 #include <string.h>
 
-//#include "matrix.h"
 #include "mex.h"
 
 #define __DEVELOPMENT_TEXT_OUTPUT__ /* #undef (#define); silent (verbose) */
@@ -240,20 +239,6 @@ void aux_compute_sym_cost_matrix(
         int typR,double sR,double *pR,
         int typW,double sW,double *pW,
         double *pC,double *pD);
-
-/*
- * Main algorithm(s) interface function declarations.
- */
-
-int InitializePrblmStruct(qpdatStruct *dat,int whichmem,int verbosity);
-void FreePrblmStruct(qpdatStruct *dat,int verbosity);
-int CreateCholeskyCache(qpdatStruct *dat,double *pCC1,double *pCC2,int ndassert);
-
-int msqp_pdipm_init(qpdatStruct *qpd,int verbosity);
-void msqp_pdipm_free(qpdatStruct *qpd,int verbosity);
-
-int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr);
-int msqp_solve_niq(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr);
 
 /*
  * mexFunction : the MATLAB main / entry point / interface
