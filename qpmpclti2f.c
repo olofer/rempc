@@ -64,13 +64,17 @@
 
 #define MINIMUM_REQUIRED_STAGES 3
 
-#include "multisolver.h"
-
-#define PARSE_VERBOSITY 1
-
 /* NOTE: memory allocation should be done using the
  * mxMalloc(.) and mxFree(.) routines supplied by the MATLAB API.
  */
+
+#define __MULTISOLVER_MALLOC mxMalloc
+#define __MULTISOLVER_FREE   mxFree
+#define __MULTISOLVER_PRINTF mexPrintf
+
+#include "multisolver.h"  // <-- "core" solver code
+
+#define PARSE_VERBOSITY 1
 
 #define PRMSTRUCT prhs[0]
 #define OPTSTRUCT prhs[1]

@@ -1,6 +1,18 @@
 #ifndef __MULTISOLVER_H__
 #define __MULTISOLVER_H__
 
+#ifndef __MULTISOLVER_MALLOC
+#define __MULTISOLVER_MALLOC malloc
+#endif
+
+#ifndef __MULTISOLVER_FREE
+#define __MULTISOLVER_FREE free
+#endif
+
+#ifndef __MULTISOLVER_PRINTF
+#define __MULTISOLVER_PTINTF printf
+#endif
+
 /* Redundant sparse matrix CCS/CRS representation */
 typedef struct sparseMatrix {
 	int m;
@@ -16,7 +28,7 @@ typedef struct sparseMatrix {
 } sparseMatrix;
 
 void sparseMatrixDestroy(sparseMatrix *M) {
-	if (M->buf!=NULL) { mxFree(M->buf); M->buf=NULL; }
+	if (M->buf!=NULL) { __MULTISOLVER_FREE(M->buf); M->buf=NULL; }
 }
 
 /* return 1 if OK, 0 if allocation error, -1 if refused to create ("too dense" matrix) */
@@ -27,7 +39,7 @@ int sparseMatrixCreate(sparseMatrix *M,double *A,int m,int n) {
 	int numbytes=
 		2*(nnz)*sizeof(double)+2*(nnz)*sizeof(int)+
 		(m+1)*sizeof(int)+(n+1)*sizeof(int);
-	char *buf=mxMalloc(numbytes);
+	char *buf=__MULTISOLVER_MALLOC(numbytes);
 	if (buf==NULL) return 0;
 	M->nnz=nnz;
 	M->m=m;
@@ -41,7 +53,7 @@ int sparseMatrixCreate(sparseMatrix *M,double *A,int m,int n) {
 	M->colind=(int *)&buf[byteofs]; byteofs+=nnz*sizeof(int);
 	M->rowptr=(int *)&buf[byteofs]; byteofs+=(m+1)*sizeof(int);
 	if (byteofs!=numbytes) {
-		mexPrintf("ERROR: byteofs=%i (it should be=%i)\n",byteofs,numbytes);
+		__MULTISOLVER_PRINTF("ERROR: byteofs=%i (it should be=%i)\n",byteofs,numbytes);
 		sparseMatrixDestroy(M);
 		return 0;
 	}
@@ -61,7 +73,7 @@ int sparseMatrixCreate(sparseMatrix *M,double *A,int m,int n) {
  * All linear algebra subprograms should be contained in the "matrixopsc.h" header file
  * as static inline code that supposedly is expanded in place as macros. 
  *
- * Aux. memory required is allocated with only few calls to mxMalloc(..).
+ * Aux. memory required is allocated with only few calls to __MULTISOLVER_MALLOC(..).
  * pbuf points to storage with this arrangement:
  *
  * --------------------------------------------------
@@ -198,7 +210,7 @@ void qpcost(qpdatStruct *qpd,double *px,double *py) {
     }
     py[0]=y0; py[1]=y1; py[2]=0.5*y2;
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ll!=qpd->ndec) mexPrintf("ERROR:[%s]\n",__func__);
+    if (ll!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR:[%s]\n",__func__);
     #endif
 }
 
@@ -219,8 +231,8 @@ void Jmult(qpdatStruct *qpd,double *px,double *py) {
         ll+=nd; rr+=niq;
     }
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ll!=qpd->ndec) mexPrintf("ERROR(1):[%s]\n",__func__);
-    if (rr!=qpd->niq) mexPrintf("ERROR(2):[%s]\n",__func__);
+    if (ll!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR(1):[%s]\n",__func__);
+    if (rr!=qpd->niq) __MULTISOLVER_PRINTF("ERROR(2):[%s]\n",__func__);
     #endif
 }
 
@@ -241,8 +253,8 @@ void Jtmult(qpdatStruct *qpd,double *px,double *py) {
         ll+=nd; rr+=niq;
     }
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ll!=qpd->ndec) mexPrintf("ERROR(1):[%s]\n",__func__);
-    if (rr!=qpd->niq) mexPrintf("ERROR(2):[%s]\n",__func__);
+    if (ll!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR(1):[%s]\n",__func__);
+    if (rr!=qpd->niq) __MULTISOLVER_PRINTF("ERROR(2):[%s]\n",__func__);
     #endif
 }
 
@@ -263,8 +275,8 @@ void Cmult(qpdatStruct *qpd,double *px,double *py) {
         rr+=neq; ll+=nd;
     }
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ll!=qpd->ndec) mexPrintf("ERROR(1):[%s]\n",__func__);
-    if (rr!=qpd->neq) mexPrintf("ERROR(2):[%s]\n",__func__);
+    if (ll!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR(1):[%s]\n",__func__);
+    if (rr!=qpd->neq) __MULTISOLVER_PRINTF("ERROR(2):[%s]\n",__func__);
     #endif
 }
 
@@ -288,14 +300,14 @@ void Ctmult(qpdatStruct *qpd,double *px,double *py) {
         jj+=ndi; kk+=neqi;
     }
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ii!=qpd->nstg-1) mexPrintf("ERROR(0):[%s]\n",__func__);
+    if (ii!=qpd->nstg-1) __MULTISOLVER_PRINTF("ERROR(0):[%s]\n",__func__);
     #endif
     ndi=pstg[qpd->nstg-1].nd;
     matopc_atx(&py[jj],pstg[qpd->nstg-1].ptrD,neqi,ndi,&px[kk-neqi0]); /* last mult */
     jj+=ndi;
     #ifdef __CLUMSY_ASSERTIONS__
-    if (jj!=qpd->ndec) mexPrintf("ERROR(1):[%s]\n",__func__);
-    if (kk!=qpd->neq) mexPrintf("ERROR(2):[%s]\n",__func__);
+    if (jj!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR(1):[%s]\n",__func__);
+    if (kk!=qpd->neq) __MULTISOLVER_PRINTF("ERROR(2):[%s]\n",__func__);
     #endif
 }
 
@@ -310,7 +322,7 @@ void Hmult(qpdatStruct *qpd,double *px,double *py) {
         ll+=nd;
     }
     #ifdef __CLUMSY_ASSERTIONS__
-    if (ll!=qpd->ndec) mexPrintf("ERROR:[%s]\n",__func__);
+    if (ll!=qpd->ndec) __MULTISOLVER_PRINTF("ERROR:[%s]\n",__func__);
     #endif
 }
 
@@ -363,26 +375,26 @@ int InitializePrblmStruct(qpdatStruct *dat,int whichmem,int verbosity) {
 	}
 	dat->blklysz=ofsl;
     if (verbosity>2) {
-        mexPrintf("[%s]: ndmax=%i, nemax=%i, ndtot=%i, netot=%i\n",
+        __MULTISOLVER_PRINTF("[%s]: ndmax=%i, nemax=%i, ndtot=%i, netot=%i\n",
                 __func__,dat->ndmax,dat->nemax,dat->ndtot,dat->netot);
-        mexPrintf("[%s]: blkphsz=%i, blklysz=%i,blkwrsz=%i\n",
+        __MULTISOLVER_PRINTF("[%s]: blkphsz=%i, blklysz=%i,blkwrsz=%i\n",
                 __func__,dat->blkphsz,dat->blklysz,dat->blkwrsz);
     }
 	/* Allocate memory if requested based on bit pattern of argument whichmem */
 	if (whichmem & 0x0001) {
-		dat->blkph=(double *)mxMalloc(dat->blkphsz*sizeof(double));
+		dat->blkph=(double *)__MULTISOLVER_MALLOC(dat->blkphsz*sizeof(double));
 		if (dat->blkph==NULL) errc++;
-		/*mexPrintf("[%s]: malloc(blkph).\n",__func__);*/
+		/*__MULTISOLVER_PRINTF("[%s]: malloc(blkph).\n",__func__);*/
 	}
 	if (whichmem & 0x0002) {
-		dat->blkly=(double *)mxMalloc(dat->blklysz*sizeof(double));
+		dat->blkly=(double *)__MULTISOLVER_MALLOC(dat->blklysz*sizeof(double));
 		if (dat->blkly==NULL) errc++;
-		/*mexPrintf("[%s]: malloc(blkly).\n",__func__);*/
+		/*__MULTISOLVER_PRINTF("[%s]: malloc(blkly).\n",__func__);*/
 	}
 	if (whichmem & 0x0004) {
-		dat->blkwr=(double *)mxMalloc(dat->blkwrsz*sizeof(double));
+		dat->blkwr=(double *)__MULTISOLVER_MALLOC(dat->blkwrsz*sizeof(double));
 		if (dat->blkwr==NULL) errc++;
-		/*mexPrintf("[%s]: malloc(blkwr).\n",__func__);*/
+		/*__MULTISOLVER_PRINTF("[%s]: malloc(blkwr).\n",__func__);*/
 	}
 	return (errc==0 ? 1 : 0);
 }
@@ -391,22 +403,22 @@ int InitializePrblmStruct(qpdatStruct *dat,int whichmem,int verbosity) {
 void FreePrblmStruct(qpdatStruct *dat,int verbosity) {
 	int fc=0;
 	if (dat->blkph!=NULL) {
-		mxFree(dat->blkph);
+		__MULTISOLVER_FREE(dat->blkph);
 		dat->blkph=NULL;
 		fc++;
 	}
 	if (dat->blkly!=NULL) {
-		mxFree(dat->blkly);
+		__MULTISOLVER_FREE(dat->blkly);
 		dat->blkly=NULL;
 		fc++;
 	}
 	if (dat->blkwr!=NULL) {
-		mxFree(dat->blkwr);
+		__MULTISOLVER_FREE(dat->blkwr);
 		dat->blkwr=NULL;
 		fc++;
 	}
     if (verbosity>2) {
-        mexPrintf("[%s]: num.freed=%i.\n",__func__,fc);
+        __MULTISOLVER_PRINTF("[%s]: num.freed=%i.\n",__func__,fc);
     }
 }
 /* ************************************************* */
@@ -524,7 +536,7 @@ int BlkCholFactorizeY(
 	Y1=&tmpbuf[dmy]; dmy+=dat->nemax*(dat->nemax+1);
     tmpx=&tmpbuf[dmy]; dmy+=dat->ndmax; /* use this ndmax-sized vector during Cholesky updating if needed */
 	if (tmpbufsz!=dmy) {
-		mexPrintf("ERROR[%s]: memory offset mismatch (%i!=%i).\n",
+		__MULTISOLVER_PRINTF("ERROR[%s]: memory offset mismatch (%i!=%i).\n",
 			__func__,dmy,tmpbufsz);
 		return 4;
 	}
@@ -635,7 +647,7 @@ int BlkCholFactorizeY(
 		ofsl+=pstg[ii+1].neq*pstg[ii].neq;
 	}
   #ifdef __CLUMSY_ASSERTIONS__
-  if (ii!=N-1) mexPrintf("[%s]: iteration counter error!\n",__func__);
+  if (ii!=N-1) __MULTISOLVER_PRINTF("[%s]: iteration counter error!\n",__func__);
   #endif
 	/* Last block Y[N-1,N-1]: */
   nd1=pstg[ii+1].nd;
@@ -678,16 +690,16 @@ int BlkCholFactorizeY(
 	ofsl+=pstg[ii].neq*(pstg[ii].neq+1);
   #ifdef __CLUMSY_ASSERTIONS__
 	if (ofsl!=dat->blklysz)
-		mexPrintf("[%s]: memory offset counting error LY!\n",__func__);
+		__MULTISOLVER_PRINTF("[%s]: memory offset counting error LY!\n",__func__);
 	if (ofsp!=dat->blkphsz)
-		mexPrintf("[%s]: memory offset counting error PH!\n",__func__);
+		__MULTISOLVER_PRINTF("[%s]: memory offset counting error PH!\n",__func__);
     if (useJay>0)
         if (ofsv!=dat->niq)
-            mexPrintf("[%s]: memory offset counting error (%i=ofsv!=niq=%i)\n",
+            __MULTISOLVER_PRINTF("[%s]: memory offset counting error (%i=ofsv!=niq=%i)\n",
                     __func__,ofsv,dat->niq);
   #endif
     /*#ifdef __DEVELOPMENT_TEXT_OUTPUT__
-	printf("[%s] @ ii=%i, ofsl=%i, blklysz=%i, ofsp=%i, blkphsz=%i\n",
+	__MULTISOLVER_PRINTF("[%s] @ ii=%i, ofsl=%i, blklysz=%i, ofsp=%i, blkphsz=%i\n",
 		__func__,ii,ofsl,dat->blklysz,ofsp,dat->blkphsz);
     #endif*/
 	return 0;
@@ -737,7 +749,7 @@ int BlkCholFactorizeY2(
 	Y1=&tmpbuf[dmy]; dmy+=dat->nemax*(dat->nemax+1);
     tmpx=&tmpbuf[dmy]; dmy+=dat->ndmax; /* use this ndmax-sized vector during Cholesky updating if needed */
 	if (tmpbufsz!=dmy) {
-		mexPrintf("ERROR[%s]: memory offset mismatch (%i!=%i).\n",
+		__MULTISOLVER_PRINTF("ERROR[%s]: memory offset mismatch (%i!=%i).\n",
 			__func__,dmy,tmpbufsz);
 		return 4;
 	}
@@ -919,7 +931,7 @@ void PhiInverseMult(qpdatStruct *dat,double *y,double *x) {
 	double *L00;
 	double *blkph=dat->blkph;
 	if (blkph==NULL || x==NULL || y==NULL) {
-		mexPrintf("[%s]: early exit due to NULL pointer(s).\n",__func__);
+		__MULTISOLVER_PRINTF("[%s]: early exit due to NULL pointer(s).\n",__func__);
 		return;
 	}
 	ofsp=0; ofsy=0;
@@ -933,8 +945,8 @@ void PhiInverseMult(qpdatStruct *dat,double *y,double *x) {
 	}
     #ifdef __CLUMSY_ASSERTIONS__
 	if (ofsp!=dat->blkphsz || ofsy!=dat->ndtot) {
-		mexPrintf("[%s]: ofsy=%i, ndtot=%i\n",__func__,ofsy,dat->ndtot);
-		mexPrintf("[%s]: ofsp=%i, blkphsz=%i\n",__func__,ofsp,dat->blkphsz);
+		__MULTISOLVER_PRINTF("[%s]: ofsy=%i, ndtot=%i\n",__func__,ofsy,dat->ndtot);
+		__MULTISOLVER_PRINTF("[%s]: ofsp=%i, blkphsz=%i\n",__func__,ofsp,dat->blkphsz);
 	}
     #endif
 }
@@ -972,8 +984,8 @@ void BlkCholSolve(qpdatStruct *dat,double *b,double *x) {
 	}
     #ifdef __CLUMSY_ASSERTIONS__
 	if (ofsx!=dat->netot || ofsl!=dat->blklysz || ii!=N) {
-		mexPrintf("[%s]: ofsx=%i, netot=%i\n",__func__,ofsx,dat->netot);
-		mexPrintf("[%s]: ofsl=%i, blklysz=%i\n",__func__,ofsl,dat->blklysz);
+		__MULTISOLVER_PRINTF("[%s]: ofsx=%i, netot=%i\n",__func__,ofsx,dat->netot);
+		__MULTISOLVER_PRINTF("[%s]: ofsl=%i, blklysz=%i\n",__func__,ofsl,dat->blklysz);
 		return;
 	}
     #endif
@@ -995,8 +1007,8 @@ void BlkCholSolve(qpdatStruct *dat,double *b,double *x) {
 	}
     #ifdef __CLUMSY_ASSERTIONS__
 	if (ofsx!=0 || ofsl!=0 || ii!=-1) {
-		mexPrintf("[%s]: ofsx=%i, netot=%i\n",__func__,ofsx,dat->netot);
-		mexPrintf("[%s]: ofsl=%i, blklysz=%i\n",__func__,ofsl,dat->blklysz);
+		__MULTISOLVER_PRINTF("[%s]: ofsx=%i, netot=%i\n",__func__,ofsx,dat->netot);
+		__MULTISOLVER_PRINTF("[%s]: ofsl=%i, blklysz=%i\n",__func__,ofsl,dat->blklysz);
 	}
     #endif
 }
@@ -1050,10 +1062,10 @@ void BlkCholSolve(qpdatStruct *dat,double *b,double *x) {
  */
 int msqp_pdipm_init(qpdatStruct *qpd,int verbosity) {
     qpd->vecwrsz=5*(qpd->ndec)+4*(qpd->neq)+11*(qpd->niq);
-    qpd->vecwr=mxMalloc((qpd->vecwrsz)*sizeof(double));
+    qpd->vecwr=__MULTISOLVER_MALLOC((qpd->vecwrsz)*sizeof(double));
     if (verbosity>2) {
         if (qpd->vecwr!=NULL) {
-            mexPrintf("[%s]: vecwrsz=%i\n",__func__,qpd->vecwrsz);
+            __MULTISOLVER_PRINTF("[%s]: vecwrsz=%i\n",__func__,qpd->vecwrsz);
         }
     }
     return (qpd->vecwr!=NULL ? 1 : 0);
@@ -1062,7 +1074,7 @@ int msqp_pdipm_init(qpdatStruct *qpd,int verbosity) {
 /* Free memory that was allocated by the previous subprogram */
 void msqp_pdipm_free(qpdatStruct *qpd,int verbosity) {
     if (qpd->vecwr!=NULL) {
-        mxFree(qpd->vecwr);
+        __MULTISOLVER_FREE(qpd->vecwr);
         qpd->vecwr=NULL;
     }
 }
@@ -1161,11 +1173,11 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     nz=qpd->niq;
     
     /*#ifdef __DEVELOPMENT_TEXT_OUTPUT__
-    mexPrintf("[%s]\n",__func__);
-    mexPrintf("qpo->maxiters=%i\n",qpo->maxiters);
-    mexPrintf("qpo->eta=%f\n",qpo->eta);
-    mexPrintf("qpo->ep=%e\n",qpo->ep);
-    mexPrintf("nx=%i, ny=%i, nz=%i\n",nx,ny,nz);
+    __MULTISOLVER_PRINTF("[%s]\n",__func__);
+    __MULTISOLVER_PRINTF("qpo->maxiters=%i\n",qpo->maxiters);
+    __MULTISOLVER_PRINTF("qpo->eta=%f\n",qpo->eta);
+    __MULTISOLVER_PRINTF("qpo->ep=%e\n",qpo->ep);
+    __MULTISOLVER_PRINTF("nx=%i, ny=%i, nz=%i\n",nx,ny,nz);
     #endif*/
     
     if (qpd->vecwr==NULL) return -1;
@@ -1193,7 +1205,7 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     
     #ifdef __CLUMSY_ASSERTIONS__
     if (ofs!=qpd->vecwrsz) {
-		  mexPrintf("[%s]: MISMATCH: ofs=%i, vecwrsz=%i\n",__func__,ofs,qpd->vecwrsz);
+		  __MULTISOLVER_PRINTF("[%s]: MISMATCH: ofs=%i, vecwrsz=%i\n",__func__,ofs,qpd->vecwrsz);
     }
     #endif
     
@@ -1262,7 +1274,7 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
         #endif
         if (chret!=0) {
             /*#ifdef __DEVELOPMENT_TEXT_OUTPUT__
-            mexPrintf("[%s]: ERROR: chret=%i\n",__func__,chret);
+            __MULTISOLVER_PRINTF("[%s]: ERROR: chret=%i\n",__func__,chret);
             #endif*/
             break;
         }
@@ -1361,7 +1373,7 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     }
     
     /*#ifdef __DEVELOPMENT_TEXT_OUTPUT__
-    mexPrintf("[%s]: stop after %i itrs. (oktostop=%i, chret=%i).\n",
+    __MULTISOLVER_PRINTF("[%s]: stop after %i itrs. (oktostop=%i, chret=%i).\n",
             __func__,kk,oktostop,chret);
     #endif*/
     
@@ -1394,7 +1406,7 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     if (!oktostop) return 1;
     
     /*#ifdef __DEVELOPMENT_TEXT_OUTPUT__
-    mexPrintf("[%s]: fx*=%e, fofs=%e\n",
+    __MULTISOLVER_PRINTF("[%s]: fx*=%e, fofs=%e\n",
             __func__,fobj[1]+fobj[2],fobj[0]);
     #endif*/
     
@@ -1453,7 +1465,7 @@ int msqp_solve_niq(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
         /* This should never be possible since more memory is allocated than needed
          * (allocation as if running the full PDIPM code; subset of memory used here).
          */
-		    mexPrintf("[%s]: MISMATCH: ofs=%i, vecwrsz=%i\n",
+		    __MULTISOLVER_PRINTF("[%s]: MISMATCH: ofs=%i, vecwrsz=%i\n",
                 __func__,ofs,qpd->vecwrsz);
     }
     #endif
