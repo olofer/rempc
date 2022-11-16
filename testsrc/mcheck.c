@@ -1,6 +1,5 @@
 /*
  * Code for checking basic matrix routines.
- * Compile (windows): gcc -O2 -Wall -o mcheck.exe mcheck.c
  */
 
 #include <stdlib.h>
@@ -8,8 +7,9 @@
 #include <memory.h>
 #include <time.h>
 #include <math.h>
-#include <string.h> /* inclusion of this before "textio.h" resolves strtok(.) warnings! */
+#include <string.h>
 #include <assert.h>
+
 /* High-quality random numbers */
 #include "mt19937ar.h"
 /* Include basic generic vector operation utility functions: vectorops.h */
@@ -19,20 +19,6 @@
 /* Need a few text input/output functions */
 #include "textio.h"
 
-/* ... */
-
-/* Also allow a check of the randn(m,n) function; somehow... */
-
-/* TODO: implement special symmetric updates and sparsity auto-detect+exploit subroutines.
-   (e.g.: T <- Q+J'*diag(d)*J, where J may have a very sparse pattern)
-   
-   TODO: begin to develop a framework for the multi-stage PDIPM solver with focus on the LTI MPC problem.
-   (data structures and general portable solution code)
-
-   TODO: updating routine for Cholesky factors (rank-1) !!!
- */
-
-/* Q: will all test function be of this form? Can I just set a function pointer? */
 int test_transpose(matopc_real *A,int m,int n);
 int test_at_mult_a(matopc_real *A,int m,int n);
 int test_a_mult_at(matopc_real *A,int m,int n);
@@ -48,12 +34,12 @@ matopc_real frob_diff_chol(int n,matopc_real *L1,matopc_real *d1,matopc_real *L2
 
 int main(int argc,char **argv) {
 
-	static char xfilename[]="X.dat";
-	static char xtfilename[]="Xt.dat";
-	static char tablespec[]="%.16e";	/* full capacity for doubles */
-	static char wfilename[]="W.dat";
-	static char xwfilename[]="XW.dat";
-	static double epstol=1.0e-15;
+	const char xfilename[]="X.dat";
+	const char xtfilename[]="Xt.dat";
+	const char tablespec[]="%.16e";	/* full capacity for doubles */
+	const char wfilename[]="W.dat";
+	const char xwfilename[]="XW.dat";
+	const double epstol=1.0e-14;
 	int retval,cholret;
 
 	unsigned long _mt_init[4]={0x123, 0x234, 0x345, 0x456};

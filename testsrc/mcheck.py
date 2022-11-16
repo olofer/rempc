@@ -74,7 +74,7 @@ if __name__ == '__main__':
     assert m >= 1 and n >= 1 and k >= 1 
     print([m,n,k])
     cmdstr = './mcheck {} {} {}'.format(m, n, k)
-    print('executing: {}'.format(cmdstr))
+    print('executing: {}'.format(cmdstr), flush = True)
     retval = os.system(cmdstr)
     assert retval == 0
 
@@ -88,6 +88,9 @@ if __name__ == '__main__':
   z   = np.loadtxt("z.dat")
   W   = np.loadtxt("W.dat")
   XW  = np.loadtxt("XW.dat")  # should be equal to X*W
+
+  print('  <X> = {}'.format(np.mean(X)))
+  print('sd(X) = {}'.format(np.std(X)))
 
   if args.do_not_generate:
     m = X.shape[0]
@@ -111,8 +114,25 @@ if __name__ == '__main__':
   err5 = frobnorm(np.dot(L2, L2.T) - ZpI) / frobnorm(ZpI)
   assert err5 < args.tolerance 
 
-  # TODO: independently compute L1, L2 and check
-  # ... implement final tests ...
+  L1b = np.linalg.cholesky(np.dot(X, X.T) + np.eye(m))
+  err6 = frobnorm(L1b - L1) / frobnorm(L1b)
+  assert err6 < args.tolerance
 
-  assert True
+  L2b = np.linalg.cholesky(np.dot(X.T, X) + np.eye(n))
+  err7 = frobnorm(L2b - L2) / frobnorm(L2b)
+  assert err7 < args.tolerance
 
+  XWb = np.dot(X, W)
+  err8 = frobnorm(XWb - XW) / frobnorm(XWb)
+  assert err8 < args.tolerance
+
+  yb = np.linalg.solve(L1.T, np.linalg.solve(L1, np.ones((m, ))))
+  err9 = frobnorm(yb - y) / frobnorm(yb)
+  assert err9 < args.tolerance
+
+  zb = np.linalg.solve(L2.T, np.linalg.solve(L2, np.ones((n, ))))
+  err10 = frobnorm(zb - z) / frobnorm(zb)
+  assert err10 < args.tolerance
+
+  print([err1, err2, err3, err4, err5, err6, err7, err8, err9, err10])
+  print('done.')

@@ -14,7 +14,7 @@
 #define TEXTIO_ROWMAJOR -1
 
 /* write a file to disk with one integer number per line (like a column) */
-int textio_write_integer_array_column(char *filename,int *a,int n) {
+int textio_write_integer_array_column(const char *filename,int *a,int n) {
 	int jj;
 	FILE *pfile = NULL;
 	pfile = fopen(filename,"w");
@@ -29,7 +29,7 @@ int textio_write_integer_array_column(char *filename,int *a,int n) {
 }
 
 /* write a file to disk with a single colums of numbers of doubles */
-int textio_write_double_array_column(char *filename,double *a,int n) {
+int textio_write_double_array_column(const char *filename,double *a,int n) {
 	int jj;
 	FILE *pfile = NULL;
 	pfile = fopen(filename,"w");
@@ -43,8 +43,8 @@ int textio_write_double_array_column(char *filename,double *a,int n) {
 	return 1;
 }
 
-/* write a matrix to a file (TODO formatspec as parameter) */
-int textio_write_double_array_matrix(char *filename,double *a,int m,int n,char *formatspec) {
+/* write a matrix to a file */
+int textio_write_double_array_matrix(const char *filename,const double *a,int m,int n,const char *formatspec) {
 	static char default_formatspec[]="%.10e";
 	static char str1[8];
 	static char str2[8];
@@ -72,7 +72,7 @@ int textio_write_double_array_matrix(char *filename,double *a,int m,int n,char *
 }
 
 /* write a file to disk with integers row by row, c columns */
-int textio_write_integer_rows(char *filename,int *a,int c,int n) {
+int textio_write_integer_rows(const char *filename,int *a,int c,int n) {
 	int jj,cc;
 	FILE *pfile = NULL;
 	pfile = fopen(filename,"w");
@@ -92,7 +92,7 @@ int textio_write_integer_rows(char *filename,int *a,int c,int n) {
 	return 1;
 }
 
-int textio_preread_textfile(char *filename,int *numvalues) {
+int textio_preread_textfile(const char *filename,int *numvalues) {
 	/* Open file and scan through to count how many numbers it contains, then close the file. */
 	assert(filename!=NULL);
 	assert(numvalues!=NULL);
@@ -120,7 +120,7 @@ int textio_preread_textfile(char *filename,int *numvalues) {
 	return 1;
 }
 
-int textio_read_textfile_array(char *filename,int *numvalues,double *a,int maxvalues) {
+int textio_read_textfile_array(const char *filename,int *numvalues,double *a,int maxvalues) {
 	assert(filename!=NULL);
 	assert(numvalues!=NULL);
 	assert(a!=NULL);
@@ -149,7 +149,7 @@ int textio_read_textfile_array(char *filename,int *numvalues,double *a,int maxva
 }
 
 /* Read a matrix from a textfile; only count elements if buf==NULL, otherwise store elements in buf */
-int textio_read_table_file(char *filename,int *m,int *n,double *buf,int maxbuf,int colStride,int rowStride) {
+int textio_read_table_file(const char *filename,int *m,int *n,double *buf,int maxbuf,int colStride,int rowStride) {
 	static char linebuffer[TEXTIO_MAXBUFFER];
 	*m=0; *n=0;
 	FILE *fp = NULL;
@@ -205,7 +205,7 @@ int textio_read_table_file(char *filename,int *m,int *n,double *buf,int maxbuf,i
 
 /* This code should pre-read the file: check that M*N=totalcount and all rows have the same length; then
    assign the column-stride and row-stride and fill the array to a newly allocated memory slot. */
-int textio_read_matrix_utility(char *filename,double **dat,int *m,int *n,int colmaj) {
+int textio_read_matrix_utility(const char *filename,double **dat,int *m,int *n,int colmaj) {
 	int ret,rows,cols;
 	int ret2,rows2,cols2;
 	*dat=NULL;
