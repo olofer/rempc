@@ -5,6 +5,10 @@ Sets up a multi-stage structure with random matrix data and with random-size sta
 Also test of "no inequality" (NIQ) solver specifically defined in ../multisolver.h
 Complete test analysis requires running the script: niqcheck.py
 
+
+Things to add: optional nrhs parameter, to check NIQ solver; text files with right-hand-sides and their solutions;
+each column will have length nd+ne...
+
 */
 
 #include <stdio.h>
@@ -53,7 +57,8 @@ int main(int argc,const char **argv)
 	int dmin,dmax,tmp;
 	int N,ii,ofs1,ofs2,ofs3,rr,cc;
 	int nd,ne,ndmax;
-	int do_text_output_dump;
+	int do_text_output_dump = 0;
+	int nrhs = 0;
 
 	double dd1,dd2;
 
@@ -71,8 +76,8 @@ int main(int argc,const char **argv)
 
 	bool return_ok = true;
 
-	if (argc<4 || argc>5) {
-		printf("usage: %s numstages dmin dmax [textfile]\n",argv[0]);
+	if (argc<4 || argc>6) {
+		printf("usage: %s numstages dmin dmax [textfile] [nrhs]\n",argv[0]);
 		printf("sourcefile: %s, timestamp: %s\n",__FILE__,__TIMESTAMP__);
 		return 1;
 	}
@@ -80,11 +85,8 @@ int main(int argc,const char **argv)
 	numStages=(int)atof(argv[1]); // numStages=N+1
 	dmin=(int)atof(argv[2]);
 	dmax=(int)atof(argv[3]);
-	if (argc>=5) {
-		do_text_output_dump = (int)atof(argv[4]);
-	} else {
-		do_text_output_dump = 0;
-	}
+	if (argc >= 5) do_text_output_dump = (int)atof(argv[4]);
+	if (argc >= 6) nrhs = (int)atof(argv[5]);
 
 	if (do_text_output_dump>0) {
 		printf("Will dump big text files.\n");
@@ -275,7 +277,7 @@ int main(int argc,const char **argv)
 	}
 	printf("done.\n");
 
-	if (return_ok) {
+	if (return_ok && nrhs > 0) {
 		/*
 		Testdrive the multisolver.h solver "API" (for the case with no inequalities -> block structured linear equation once)
 		*/
@@ -289,6 +291,12 @@ int main(int argc,const char **argv)
 		qpd.ph = NULL; // should be random nd vector
     qpd.pf = NULL; // can be NULL
     qpd.pd = NULL; // should be random ne vector
+
+		double *buffer = (double *)malloc(sizeof(double) * ((nd + ne) * nrhs * 2 + nd)); // to hold both RHS and solution columns
+		matopc_randn(buffer, nd + ne, nrhs);
+		matopc_zeros(&buffer[nrhs * (nd + ne)], nd + ne, nrhs);
+		double* dummy_zeros = &buffer[2 * nrhs * (nd + ne)];
+		matopc_zeros(dummy_zeros, nd, 1);
 
 		tmp = InitializePrblmStruct(&qpd, 0x07, local_qpd_verbosity);
 		return_ok = (return_ok && (tmp == 1));
@@ -309,9 +317,22 @@ int main(int argc,const char **argv)
     qpo.chol_update=0;
     qpo.blas_suite=0;
 
-		// TODO: the main task is now to run msqp_solve_niq(..) ; using a few random RHSs, and saving the results to disk; for numpy dense verification
-		//tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
-		//return_ok = (return_ok && (tmp == 0));
+    // need to setup a dummy cost function to avoid segmentation faults
+		for (int j = 0; j < qpd.nstg; j++) {
+			qpd.pstg[j].ptrq = dummy_zeros;
+			qpd.pstg[j].ptrq0 = dummy_zeros;
+		}
+
+		for (int i = 0; i < nrhs; i++) {
+			qpd.ph = &buffer[(nd + ne) * i];
+			qpd.pd = &buffer[(nd + ne) * i + ne];
+			tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
+			return_ok = (return_ok && (tmp == 0));
+			printf("niq solve #%i | ok = %i\n", i, qpr.converged);
+			printf("inf1,inf2=%e, %e\n",qpr.inftuple[0],qpr.inftuple[1]);
+		}
+
+		free(buffer);
 
     msqp_pdipm_free(&qpd, local_qpd_verbosity);
 		FreePrblmStruct(&qpd, local_qpd_verbosity);

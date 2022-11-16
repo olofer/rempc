@@ -1141,8 +1141,10 @@ void mexFunction(int nlhs,mxArray *plhs[],
          * The simplified solver will force itself to use the Cholesky cache always.
          * This is possible since the factors never need to be "updated".
          */
-        qq=CreateCholeskyCache(&qpDat,pCC1,pCC2,nd);
-        if (qq!=0) mexErrMsgTxt("Fatal block Cholesky factorization failure.\n");
+        if (qpOpt.chol_update>0) {
+          qq=CreateCholeskyCache(&qpDat,pCC1,pCC2,nd);
+          if (qq!=0) mexErrMsgTxt("Fatal block Cholesky factorization failure.\n");
+        }
         
         #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
         fclk_timestamp(&_tic2);

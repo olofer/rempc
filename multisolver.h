@@ -1434,10 +1434,12 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
  *       This is quite stupid so add some technique to auto-detect
  *       this redundancy (checking pointers are the same; and copy/paste).
  */
-int msqp_solve_niq(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
-    
-    static int NIQ_USE_CACHE=1;
-    static double fobj[3];
+int msqp_solve_niq(qpdatStruct *qpd,
+                   qpoptStruct *qpo,
+                   qpretStruct *qpr)
+{    
+    //static int NIQ_USE_CACHE=1;
+    double fobj[3];
     int kk,ofs,oktostop,chret;
     double thr1,thr2;
     double inf1,inf2;
@@ -1480,7 +1482,8 @@ int msqp_solve_niq(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
     fclk_timestamp(&__tica);
     #endif
-    chret=BlkCholFactorizeY(qpd,1,0,NULL,NIQ_USE_CACHE); /* factorize Y=C*inv(H)*C'=L*L' */
+    //chret=BlkCholFactorizeY(qpd,1,0,NULL,NIQ_USE_CACHE); /* factorize Y=C*inv(H)*C'=L*L' */
+    chret=BlkCholFactorizeY(qpd,1,0,NULL,qpo->chol_update);
     #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
     fclk_timestamp(&__ticb);
     cholytimesum+=fclk_delta_timestamps(&__tica,&__ticb);
@@ -1515,7 +1518,8 @@ int msqp_solve_niq(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
     kk=0;
     
     /* evaluate cost function at the solution x (supposedly) */
-    qpcost(qpd,x,fobj);
+    if (qpr != NULL)
+      qpcost(qpd,x,fobj);
     
     if (qpr!=NULL) {
         qpr->nx=nx;
