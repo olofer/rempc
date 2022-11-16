@@ -61,8 +61,6 @@
 #include "fastclock.h"
 #endif
 
-#define MINIMUM_REQUIRED_STAGES 3
-
 /* NOTE: memory allocation should be done using the
  * mxMalloc(.) and mxFree(.) routines supplied by the MATLAB API.
  */
@@ -346,7 +344,7 @@ void mexFunction(int nlhs,mxArray *plhs[],
     if (mxGetNumberOfElements(pmx)!=1) /*mxIsScalar(.) ? */
         mexErrMsgTxt("Field n must be a scalar.");
     n=(int)round(mxGetScalar(pmx));
-    if (n+1<MINIMUM_REQUIRED_STAGES)   /* confirm that n+1>=MINIMUM_REQUIRED_STAGES */
+    if (n+1<__MULTISOLVER_MINIMUM_STAGES)   /* confirm that n+1>=__MULTISOLVER_MINIMUM_STAGES */
         mexErrMsgTxt("Horizon is too short (n+1>=3 required).");
     
     /* Read A-matrix; get dimension nx and pointer pA to column-major matrix data */

@@ -11,6 +11,12 @@ target_include_directories(mcheck PUBLIC ${PROJECT_SOURCE_DIR}/testsrc)
 target_link_libraries(mcheck PRIVATE -lm -lrt)
 target_compile_options(mcheck PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter -O2)
 
+add_executable(niqcheck ${PROJECT_SOURCE_DIR}/testsrc/niqcheck.c)
+target_include_directories(niqcheck PUBLIC ${PROJECT_SOURCE_DIR})
+target_include_directories(niqcheck PUBLIC ${PROJECT_SOURCE_DIR}/testsrc)
+target_link_libraries(niqcheck PRIVATE -lm -lrt)
+target_compile_options(niqcheck PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter -O2)
+
 enable_testing()
 
 set(MaxDim "200")

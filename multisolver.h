@@ -10,7 +10,11 @@
 #endif
 
 #ifndef __MULTISOLVER_PRINTF
-#define __MULTISOLVER_PTINTF printf
+#define __MULTISOLVER_PRINTF printf
+#endif
+
+#ifndef __MULTISOLVER_MINIMUM_STAGES
+#define __MULTISOLVER_MINIMUM_STAGES 3
 #endif
 
 /* Redundant sparse matrix CCS/CRS representation */
@@ -339,7 +343,7 @@ int InitializePrblmStruct(qpdatStruct *dat,int whichmem,int verbosity) {
 	stageStruct *pstg;
 	if (dat==NULL) return 0;
 	if (dat->pstg==NULL) return 0;
-	if (dat->nstg<MINIMUM_REQUIRED_STAGES) return 0;
+	if (dat->nstg<__MULTISOLVER_MINIMUM_STAGES) return 0;
 	errc=0;
 	dat->blkly=NULL;
 	dat->blkph=NULL;
