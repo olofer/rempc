@@ -28,3 +28,5 @@ add_test(NAME smoke-mcheck-tolerance COMMAND python3  ../testsrc/mcheck.py --do-
 foreach(itr RANGE 1 10)
   add_test(NAME mcheck-${itr} COMMAND python3  ../testsrc/mcheck.py --N ${MaxDim} --tolerance ${Tolerance}) 
 endforeach()
+
+add_test(NAME smoke-niqcheck COMMAND niqcheck 50 1 20 1)

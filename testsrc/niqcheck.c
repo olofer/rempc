@@ -9,34 +9,18 @@ Complete test analysis requires running the script: niqcheck.py
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <math.h>
 #include <float.h>
 #include <memory.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 #include "mt19937ar.h"
 #include "vectorops.h"
 #include "matrixopsc.h"
 #include "textio.h"
 #include "multisolver.h"
-
-/*typedef struct stageStruct {
-    int idx;
-    int nd;
-    int neq;
-    //int niq;
-    double *ptrQ;
-    //double *ptrq;
-    //double *ptrq0;
-    //double *ptrJ;
-    //double *ptrf;
-    double *ptrC;	// size neq(idx)-by-nd(idx)
-    //double *ptrd;
-    double *ptrD;	// size neq(idx-1)-by-nd(idx)
-    double *ptrL0; // aux. storage for Cholesky block; size nd(idx)
-    double *ptrL1; // aux. storage for Cholesky block; size neq(idx) 
-    double *ptrL2; // aux. storage for rectangular Cholesky block; size 
-} stageStruct;*/
 
 /* Uniform integer on 1..q */
 int genrand_index1q(int q) {
@@ -46,11 +30,22 @@ int genrand_index1q(int q) {
 /* Main entry-point */
 int main(int argc,const char **argv)
 {
+	unsigned long _mt_init[4]={0x123, 0x234, 0x345, 0x456};
+	unsigned long _mt_length=4;
+	time_t epochtime;
+	epochtime = time(NULL);
+	if (epochtime==((time_t)-1)) {
+		printf("WARNING: time() failed. MT PRNG will be seeded with a default.\n");
+		init_by_array(_mt_init,_mt_length);
+	} else {
+		init_genrand((unsigned long)epochtime);
+	}
+
   const char bigPhiTextfilename[] = "bigPhi.txt";
   const char bigCeeTextfilename[] = "bigCee.txt";
   const char bigEllTextfilename[] = "bigEll.txt";
-  const char bigWhyTextFilename[] = "bigWhy.txt"; // this is created by "nondense" block based method...
-  const char bigEllWhyTextFilename[] = "bigEllWhy.txt"; // this is created by "nondense" block based method...
+  //const char bigWhyTextFilename[] = "bigWhy.txt"; // this is created by "nondense" block based method...
+  //const char bigEllWhyTextFilename[] = "bigEllWhy.txt"; // this is created by "nondense" block based method...
   const int minimumStages = __MULTISOLVER_MINIMUM_STAGES;
   const double PHI_EPSILON = 1.0e-1;
 
@@ -73,6 +68,8 @@ int main(int argc,const char **argv)
 	double *bigPhi=NULL;
 	double *bigCee=NULL;
 	double *bigWhy=NULL;
+
+	bool return_ok = true;
 
 	if (argc<4 || argc>5) {
 		printf("usage: %s numstages dmin dmax [textfile]\n",argv[0]);
@@ -202,10 +199,6 @@ int main(int argc,const char **argv)
 
 	/* Run a verification code that checks the equality of bigCee blocks to
 	   those that are supposed to exactly the same based on the stage struct array pointer fields.
-	   ... IMPORTANT FOR DEBUGGING PURPOSES ...
-
-	   NOTE: maybe need to do this explicitly also for Phi ?! to be sure.
-
 	 */
 	rr=0; cc=0; dd2=0.0;
 	for (ii=0;ii<numStages-1;ii++) {
@@ -232,6 +225,8 @@ int main(int argc,const char **argv)
 	}
 	printf("Total frob.err.sum=%e\n",dd2); /* MUST BE ZERO! */
 
+	return_ok = (return_ok && (dd2 == 0.0));
+
 	/* C:	ne-by-nd
 	 * Phi:	nd-by-nd	Phi = blkdiag(Q(i)) = L0*L0', inv(Phi)=L0'\(L0\I)
 	 * Y:	ne-by-ne	Y = C*inv(Phi)*C' = Z'*Z, Z = L0\C'
@@ -239,25 +234,25 @@ int main(int argc,const char **argv)
 	 *
 	 * Form the above matrices (as full dense matrices).
 	 * This is the referance result for the block-based factorization code.
-	 * Also dump the full dense matrices to text files for external verification
-	 * with SCILAB or MATLAB (e.g.).
+	 * Also dump the full dense matrices to text files for external verification.
 	 *
 	 */
 
 	if (do_text_output_dump>0) {
 		tmp=textio_write_double_array_matrix(bigPhiTextfilename,bigPhi,nd,nd,"%.16e");
+		return_ok = (return_ok && (tmp == 1));
 		if (tmp!=1) {
 			printf("Failed to write text file: %s\n",bigPhiTextfilename);
 		} else {
 			printf("Wrote text file: %s\n",bigPhiTextfilename);
 		}
 		tmp=textio_write_double_array_matrix(bigCeeTextfilename,bigCee,ne,nd,"%.16e");
+		return_ok = (return_ok && (tmp == 1));
 		if (tmp!=1) {
 			printf("Failed to write text file: %s\n",bigCeeTextfilename);
 		} else {
 			printf("Wrote text file: %s\n",bigCeeTextfilename);
 		}
-		/* TODO: write stage dimension and constraint dimension text integer data files too ... */
 	}
 
 	/* Transpose bigCee in place, factorize bigPhi in place,
@@ -267,51 +262,72 @@ int main(int argc,const char **argv)
 	printf("Creating and factorizing full dense Y (%i-by-%i) for reference...",ne,ne);
 	matopc_inplace_transpose(bigCee,ne,nd);
 	tmp=matopc_cholesky_decompose(bigPhi,&bigPhi[nd*nd],nd);
+	return_ok = (return_ok && (tmp == 0));
 	if (tmp!=0) {
 		printf("Cholesky decomposition of bigPhi failed.\n");
 	}
 	matopc_cholesky_trisubst_left_matrix(bigPhi,&bigPhi[nd*nd],nd,bigCee,bigCee,ne); // Z=L0\C'
 	matopc_mtm(bigWhy,bigCee,nd,ne,MATOPC_UPPER); // upper triangle of Y=Z'*Z
 	tmp=matopc_cholesky_decompose(bigWhy,&bigWhy[ne*ne],ne);
+	return_ok = (return_ok && (tmp == 0));
 	if (tmp!=0) {
 		printf("Cholesky decomposition of bigWhy failed.\n");
 	}
 	printf("done.\n");
 
+	if (return_ok) {
+		/*
+		Testdrive the multisolver.h solver "API" (for the case with no inequalities -> block structured linear equation once)
+		*/
+		const int local_qpd_verbosity = 3;
+		qpdatStruct qpd;
+		memset(&qpd, 0, sizeof(qpdatStruct));
+		qpd.pstg = pstg;
+		qpd.nstg = numStages;
+		qpd.ndec = nd;
+		qpd.neq = ne;
+		qpd.ph = NULL; // should be random nd vector
+    qpd.pf = NULL; // can be NULL
+    qpd.pd = NULL; // should be random ne vector
 
-  // ...
-  // TODO: the main task is now to run msqp_solve_niq(..) and save the solution to disk
-  // ...
+		tmp = InitializePrblmStruct(&qpd, 0x07, local_qpd_verbosity);
+		return_ok = (return_ok && (tmp == 1));
+		tmp = msqp_pdipm_init(&qpd, local_qpd_verbosity);
+		return_ok = (return_ok && (tmp == 1));
 
-	/*
-	 * OK, at this point the stage structure is set up and the full dense version has been solved too.
-	 * Run the block-based factorizer and VERIFY that it replicates the dense factorization.
-	 * The match must close to machine precision.
-	 *
-	 * TODO: code this up...
-	 *
-	 * TODO: also code up programs/tests for block-multiplication with bigCee and bigCee'
-	 *
-	 *
-	 */
+		qpoptStruct qpo;
+		memset(&qpo, 0, sizeof(qpoptStruct));
 
-  /*
-	if (do_text_output_dump>0) {
-		tmp=BlkCreateY(pstg,numStages,NULL,bigWhyTextFilename);
-		tmp=BlkCreateLY(pstg,numStages,NULL,bigEllWhyTextFilename);
+		qpretStruct qpr;
+		memset(&qpr, 0, sizeof(qpretStruct));
+
+		qpo.verbosity=DEFAULT_OPT_VERBOSITY;
+    qpo.maxiters=DEFAULT_OPT_MAXITERS;
+    qpo.ep=DEFAULT_OPT_EP;
+    qpo.eta=DEFAULT_OPT_ETA;
+    qpo.expl_sparse=0;
+    qpo.chol_update=0;
+    qpo.blas_suite=0;
+
+		// TODO: the main task is now to run msqp_solve_niq(..) ; using a few random RHSs, and saving the results to disk; for numpy dense verification
+		//tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
+		//return_ok = (return_ok && (tmp == 0));
+
+    msqp_pdipm_free(&qpd, local_qpd_verbosity);
+		FreePrblmStruct(&qpd, local_qpd_verbosity);
 	}
-	tmp=BlkCholFactorizeY(pstg,numStages);
+
 	if (do_text_output_dump>0) {
 		matopc_zero_triangle(bigWhy,ne,MATOPC_UPPER);
 		matopc_setdiag(bigWhy,&bigWhy[ne*ne],ne);
 		tmp=textio_write_double_array_matrix(bigEllTextfilename,bigWhy,ne,ne,"%.16e");
+		return_ok = (return_ok && (tmp == 1));
 		if (tmp!=1) {
 			printf("Failed to write text file: %s\n",bigEllTextfilename);
 		} else {
 			printf("Wrote text file: %s\n",bigEllTextfilename);
 		}
 	}
-  */
 
 	free(bigCee);
 	free(bigPhi);
@@ -324,5 +340,5 @@ int main(int argc,const char **argv)
 	free(stageDims);
 	free(cnstrDims);
 	
-	return 0;
+	return (return_ok ? 0 : 2);
 }
