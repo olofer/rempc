@@ -306,6 +306,7 @@ void Ctmult(qpdatStruct *qpd,double *px,double *py) {
     #ifdef __CLUMSY_ASSERTIONS__
     if (ii!=qpd->nstg-1) __MULTISOLVER_PRINTF("ERROR(0):[%s]\n",__func__);
     #endif
+    neqi0=pstg[qpd->nstg-2].neq;
     ndi=pstg[qpd->nstg-1].nd;
     matopc_atx(&py[jj],pstg[qpd->nstg-1].ptrD,neqi,ndi,&px[kk-neqi0]); /* last mult */
     jj+=ndi;
