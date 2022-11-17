@@ -6,8 +6,10 @@ Also test of "no inequality" (NIQ) solver specifically defined in ../multisolver
 Complete test analysis requires running the script: niqcheck.py
 
 
-Things to add: optional nrhs parameter, to check NIQ solver; text files with right-hand-sides and their solutions;
-each column will have length nd+ne...
+THERE APPEARS TO BE A BUG in the NIQ solver (and more?) in some situations
+where the stages have different dimensions; it may or may not be related to the use_cache option.
+It may be related to actual infeasibility? It seems that the "x" vector can be incorrect sometimes, but the "y"
+vector always seem to be correct (this is a useful hint).
 
 */
 
@@ -24,6 +26,15 @@ each column will have length nd+ne...
 #include "vectorops.h"
 #include "matrixopsc.h"
 #include "textio.h"
+
+#define __DEVELOPMENT_TEXT_OUTPUT__         /* #undef (#define); silent (verbose) */
+#define __CLUMSY_ASSERTIONS__
+#define __COMPILE_WITH_INTERNAL_TICTOC__    /* include nanosecond timer tic/toc? */
+
+#ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+#include "fastclock.h"
+#endif
+
 #include "multisolver.h"
 
 /* Uniform integer on 1..q */
@@ -43,13 +54,18 @@ int main(int argc,const char **argv)
 		init_by_array(_mt_init,_mt_length);
 	} else {
 		init_genrand((unsigned long)epochtime);
+		//init_by_array(_mt_init,_mt_length);
 	}
 
   const char bigPhiTextfilename[] = "bigPhi.txt";
   const char bigCeeTextfilename[] = "bigCee.txt";
   const char bigEllTextfilename[] = "bigEll.txt";
+	const char bigRhsTextfilename[] = "bigRhs.txt";
+	const char bigSolTextfilename[] = "bigSol.txt";
+
   //const char bigWhyTextFilename[] = "bigWhy.txt"; // this is created by "nondense" block based method...
   //const char bigEllWhyTextFilename[] = "bigEllWhy.txt"; // this is created by "nondense" block based method...
+
   const int minimumStages = __MULTISOLVER_MINIMUM_STAGES;
   const double PHI_EPSILON = 1.0e-1;
 
@@ -125,7 +141,6 @@ int main(int argc,const char **argv)
 			ndmax=stageDims[ii];
 		}
 		ofs1+=stageDims[ii]*(stageDims[ii]+1); /* accumulate the memory required for diagonal blocks of Phi + extra diag.. */
-	//	printf("[dim#%i]: %i\n",ii,stageDims[ii]);
 	}
 
 	pqbuf=(double *)malloc(ofs1*sizeof(double));
@@ -135,12 +150,19 @@ int main(int argc,const char **argv)
 	ne=0; ofs1=0;
 	for (ii=0;ii<(numStages-1);ii++) {
 		cnstrDims[ii]=(int)ceil((double)(stageDims[ii]+stageDims[ii+1])/3.0);
+		//cnstrDims[ii] = (stageDims[ii] < stageDims[ii+1] ? stageDims[ii] : stageDims[ii + 1]);
 		ne+=cnstrDims[ii];
 		ofs1+=cnstrDims[ii]*(stageDims[ii]+stageDims[ii+1]);	/* Aggreg. mem. needed for [C,D] full matrices */
 	//	printf("[eq#%i]: %i\n",ii,cnstrDims[ii]);
 	}
 
 	printf("nd=%i (ndmax=%i), ne=%i\n",nd,ndmax,ne);
+
+	#ifdef __DEVELOPMENT_TEXT_OUTPUT__
+	for (ii = 0; ii < numStages; ii++) {
+	  //printf("stage %i dim. = %i, eqdim. = %i\n",ii,stageDims[ii], (ii < numStages - 1 ? cnstrDims[ii] : -1));
+	}
+	#endif
 
 	pcdbuf=(double *)malloc(ofs1*sizeof(double));
 
@@ -298,6 +320,16 @@ int main(int argc,const char **argv)
 		double* dummy_zeros = &buffer[2 * nrhs * (nd + ne)];
 		matopc_zeros(dummy_zeros, nd, 1);
 
+		if (do_text_output_dump>0) {
+		  tmp=textio_write_double_array_matrix(bigRhsTextfilename,buffer,nd+ne,nrhs,"%.16e");
+		  return_ok = (return_ok && (tmp == 1));
+		  if (tmp!=1) {
+			  printf("Failed to write text file: %s\n",bigRhsTextfilename);
+		  } else {
+			  printf("Wrote text file: %s\n",bigRhsTextfilename);
+		  }
+		}
+
 		tmp = InitializePrblmStruct(&qpd, 0x07, local_qpd_verbosity);
 		return_ok = (return_ok && (tmp == 1));
 		tmp = msqp_pdipm_init(&qpd, local_qpd_verbosity);
@@ -325,11 +357,23 @@ int main(int argc,const char **argv)
 
 		for (int i = 0; i < nrhs; i++) {
 			qpd.ph = &buffer[(nd + ne) * i];
-			qpd.pd = &buffer[(nd + ne) * i + ne];
+			qpd.pd = &buffer[(nd + ne) * i + nd];
 			tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
 			return_ok = (return_ok && (tmp == 0));
 			printf("niq solve #%i | ok = %i\n", i, qpr.converged);
 			printf("inf1,inf2=%e, %e\n",qpr.inftuple[0],qpr.inftuple[1]);
+			memcpy(&buffer[(nd + ne) * i + nrhs * (nd + ne)], qpr.x, nd * sizeof(double));
+			memcpy(&buffer[nd + (nd + ne) * i + nrhs * (nd + ne)], &(qpr.x[nd]), ne * sizeof(double));
+		}
+
+		if (do_text_output_dump>0) {
+		  tmp=textio_write_double_array_matrix(bigSolTextfilename,&buffer[(nd+ne)*nrhs],nd+ne,nrhs,"%.16e");
+		  return_ok = (return_ok && (tmp == 1));
+		  if (tmp!=1) {
+			  printf("Failed to write text file: %s\n",bigSolTextfilename);
+		  } else {
+			  printf("Wrote text file: %s\n",bigSolTextfilename);
+		  }
 		}
 
 		free(buffer);

@@ -19,8 +19,8 @@ target_compile_options(niqcheck PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-par
 
 enable_testing()
 
-set(MaxDim "200")
-set(Tolerance "1.0e-14")
+set(MaxDim "100")
+set(Tolerance "1.0e-8")  # typically much better tolerance, but this is to signal actual badness
 
 add_test(NAME smoke-mcheck COMMAND mcheck 40 50 30)
 add_test(NAME smoke-mcheck-tolerance COMMAND python3  ../testsrc/mcheck.py --do-not-generate --tolerance ${Tolerance})
@@ -30,3 +30,9 @@ foreach(itr RANGE 1 10)
 endforeach()
 
 add_test(NAME smoke-niqcheck COMMAND niqcheck 50 1 20 1)
+
+set(TestStages "25")
+set(TestStageDims "1" "2" "3" "4" "5" "6" "7" "8" "9" "10")
+foreach(TestStageDim ${TestStageDims})
+  add_test(NAME niq-eq-${TestStageDim} COMMAND python3 ../testsrc/niqcheck.py --dmin ${TestStageDim} --dmax ${TestStageDim} --stages ${TestStages} --tolerance ${Tolerance})
+endforeach()
