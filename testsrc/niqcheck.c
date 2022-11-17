@@ -5,12 +5,6 @@ Sets up a multi-stage structure with random matrix data and with random-size sta
 Also test of "no inequality" (NIQ) solver specifically defined in ../multisolver.h
 Complete test analysis requires running the script: niqcheck.py
 
-
-THERE APPEARS TO BE A BUG in the NIQ solver (and more?) in some situations
-where the stages have different dimensions; it may or may not be related to the use_cache option.
-It may be related to actual infeasibility? It seems that the "x" vector can be incorrect sometimes, but the "y"
-vector always seem to be correct (this is a useful hint).
-
 */
 
 #include <stdio.h>
@@ -40,6 +34,44 @@ vector always seem to be correct (this is a useful hint).
 /* Uniform integer on 1..q */
 int genrand_index1q(int q) {
 	return (int)ceil(q*genrand_real3());
+}
+
+double test_Cmult(qpdatStruct* qpd, 
+                  double* Cee) 
+{
+	const int nd = qpd->ndec;
+	const int ne = qpd->neq;
+	double* x = malloc(sizeof(double) * nd);
+	double* y0 = malloc(sizeof(double) * ne);
+	double* y1 = malloc(sizeof(double) * ne);
+	matopc_randn(x, nd, 1);
+	matopc_ax(y0, Cee, ne, nd, x);
+	Cmult(qpd, x, y1);
+	const double infnorm_err = vecop_max_abs_diff(y0, y1, ne);
+	const double infnorm = vecop_norm(y0, ne, 0);
+	free(x);
+	free(y0);
+	free(y1);
+	return infnorm_err / infnorm;
+}
+
+double test_Ctmult(qpdatStruct* qpd, 
+                   double* Cee) 
+{
+	const int nd = qpd->ndec;
+	const int ne = qpd->neq;
+	double* x = malloc(sizeof(double) * ne);
+	double* y0 = malloc(sizeof(double) * nd);
+	double* y1 = malloc(sizeof(double) * nd);
+	matopc_randn(x, ne, 1);
+	matopc_atx(y0, Cee, ne, nd, x);
+	Ctmult(qpd, x, y1);
+	const double infnorm_err = vecop_max_abs_diff(y0, y1, nd);
+	const double infnorm = vecop_norm(y0, nd, 0);
+	free(x);
+	free(y0);
+	free(y1);
+	return infnorm_err / infnorm;
 }
 
 /* Main entry-point */
@@ -279,26 +311,6 @@ int main(int argc,const char **argv)
 		}
 	}
 
-	/* Transpose bigCee in place, factorize bigPhi in place,
-	   backsolve for Z in place, then create bigWhy and factorize bigWhy in place... neat!
-	 */
-
-	printf("Creating and factorizing full dense Y (%i-by-%i) for reference...",ne,ne);
-	matopc_inplace_transpose(bigCee,ne,nd);
-	tmp=matopc_cholesky_decompose(bigPhi,&bigPhi[nd*nd],nd);
-	return_ok = (return_ok && (tmp == 0));
-	if (tmp!=0) {
-		printf("Cholesky decomposition of bigPhi failed.\n");
-	}
-	matopc_cholesky_trisubst_left_matrix(bigPhi,&bigPhi[nd*nd],nd,bigCee,bigCee,ne); // Z=L0\C'
-	matopc_mtm(bigWhy,bigCee,nd,ne,MATOPC_UPPER); // upper triangle of Y=Z'*Z
-	tmp=matopc_cholesky_decompose(bigWhy,&bigWhy[ne*ne],ne);
-	return_ok = (return_ok && (tmp == 0));
-	if (tmp!=0) {
-		printf("Cholesky decomposition of bigWhy failed.\n");
-	}
-	printf("done.\n");
-
 	if (return_ok && nrhs > 0) {
 		/*
 		Testdrive the multisolver.h solver "API" (for the case with no inequalities -> block structured linear equation once)
@@ -378,8 +390,36 @@ int main(int argc,const char **argv)
 
 		free(buffer);
 
+        for (int i = 0; i < nrhs; i++) {
+			const double err_cmult = test_Cmult(&qpd, bigCee);
+			const double err_ctmult = test_Ctmult(&qpd, bigCee);
+			printf("err-cmult-%i = %e\t err-ctmult-%i = %e\n", i, err_cmult, i, err_ctmult);
+		}
+
     msqp_pdipm_free(&qpd, local_qpd_verbosity);
 		FreePrblmStruct(&qpd, local_qpd_verbosity);
+	}
+
+	/* Transpose bigCee in place, factorize bigPhi in place,
+	   backsolve for Z in place, then create bigWhy and factorize bigWhy in place... neat!
+	 */
+	if (do_text_output_dump>0) {
+
+	printf("Creating and factorizing full dense Y (%i-by-%i) for reference...\n",ne,ne);
+	matopc_inplace_transpose(bigCee,ne,nd);
+	tmp=matopc_cholesky_decompose(bigPhi,&bigPhi[nd*nd],nd);
+	return_ok = (return_ok && (tmp == 0));
+	if (tmp!=0) {
+		printf("Cholesky decomposition of bigPhi failed.\n");
+	}
+	matopc_cholesky_trisubst_left_matrix(bigPhi,&bigPhi[nd*nd],nd,bigCee,bigCee,ne); // Z=L0\C'
+	matopc_mtm(bigWhy,bigCee,nd,ne,MATOPC_UPPER); // upper triangle of Y=Z'*Z
+	tmp=matopc_cholesky_decompose(bigWhy,&bigWhy[ne*ne],ne);
+	return_ok = (return_ok && (tmp == 0));
+	if (tmp!=0) {
+		printf("Cholesky decomposition of bigWhy failed.\n");
+	}
+
 	}
 
 	if (do_text_output_dump>0) {

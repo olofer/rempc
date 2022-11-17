@@ -82,7 +82,10 @@ if __name__ == '__main__':
     err2a = infnorm(XY[:nd, i] - XY_ref[:nd, i]) / infnorm(XY_ref[:nd, i])
     err2b = infnorm(XY[nd:, i] - XY_ref[nd:, i]) / infnorm(XY_ref[nd:, i])
     print([err2a, err2b])
-    all_ok = all_ok and err2a < args.tolerance and err2b < args.tolerance 
+    all_ok = all_ok and err2a < args.tolerance and err2b < args.tolerance
+
+    #if err2a >= args.tolerance:
+    #  print( np.abs(XY[:nd, i] - XY_ref[:nd, i]).flatten() )
 
   # crash if solution is incorrect
   assert all_ok 
