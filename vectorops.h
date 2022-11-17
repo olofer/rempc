@@ -171,7 +171,7 @@ static inline vecop_real vecop_norm(vecop_real *x,int n,int typ) {
 
 /* maximum absolute elementwise difference between two vectors u,v */
 static inline vecop_real vecop_max_abs_diff(vecop_real *u,vecop_real *v,int n) {
-    vecop_real d=0.0,tmp; int i;
+    vecop_real d=0.0,tmp=0.0; int i;
     for (i=0;i<n;i++) {
         tmp=fabs(u[i]-v[i]);
         if (tmp>d) d=tmp;
