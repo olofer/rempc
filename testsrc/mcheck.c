@@ -476,18 +476,17 @@ int test_chol_subst_leftright(int m,int n,matopc_real eptol) {
 int test_chol_rank1_update(int n,int q,matopc_real eptol) {
 	matopc_real *buf;
 	matopc_real reldiff=1.0,diff,sumdiff=0.0,normA;
-	matopc_real *pQ,*pA,*pd,*pX,*pL0,*pd0;
+	matopc_real *pQ,*pA,*pd,*pX,*pd0;
 	int cholret,i;
 
-	/* Need: Q n-by-n, A=Q'*Q n-by-n, d n-by-1, X n-by-q, L0 n-by-n, p0 n-by-1 */
-	buf=(matopc_real *)malloc(sizeof(matopc_real)*(n*n+n*n+n+n*q+n*n+n));
+	/* Need: Q n-by-n, A=Q'*Q n-by-n, d n-by-1, X n-by-q, p0 n-by-1 */
+	buf=(matopc_real *)malloc(sizeof(matopc_real)*(n*n+n*n+n+n*q+n));
 	if (!buf) return 0;
 	pQ=&buf[0];
 	pA=&buf[n*n];
 	pd=&buf[n*n+n*n];
 	pX=&buf[n*n+n*n+n];
-	pL0=&buf[n*n+n*n+n+n*q];
-	pd0=&buf[n*n+n*n+n+n*q+n*n];
+	pd0=&buf[n*n+n*n+n+n*q];
 
 	matopc_randn(pQ,n,n);	/* Create n-by-n random matrix Q */
 	matopc_randn(pX,n,q);	/* Create n-by-q random matrix X */
