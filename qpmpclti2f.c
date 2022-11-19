@@ -869,13 +869,8 @@ void mexFunction(int nlhs,mxArray *plhs[],
     /* Set default algorithm options.
      * Overwritten later if an options struct provides a copy.
      */
-    qpOpt.verbosity=DEFAULT_OPT_VERBOSITY;
-    qpOpt.maxiters=DEFAULT_OPT_MAXITERS;
-    qpOpt.ep=DEFAULT_OPT_EP;
-    qpOpt.eta=DEFAULT_OPT_ETA;
-    qpOpt.expl_sparse=0;
-    qpOpt.chol_update=0;
-    qpOpt.blas_suite=0;
+    setup_qpopt_defaults(&qpOpt);
+    
     /* Set the default return variable options: full control trajectory
      * but nothing for the state trajectory.
      */

@@ -178,7 +178,20 @@ typedef struct qpoptStruct {
     int expl_sparse;    /* exploit sparsity of J,D if pos. */
     int verbosity;
     int blas_suite;     /* which suite of basic lin.alg. subprogs. ? */
+    int refinement;     /* one-step refinement (TBD) */
 } qpoptStruct;
+
+void setup_qpopt_defaults(qpoptStruct* qpo) {
+	memset(qpo, 0, sizeof(qpoptStruct));
+	qpo->verbosity=DEFAULT_OPT_VERBOSITY;
+    qpo->maxiters=DEFAULT_OPT_MAXITERS;
+    qpo->ep=DEFAULT_OPT_EP;
+    qpo->eta=DEFAULT_OPT_ETA;
+    qpo->expl_sparse=0;
+    qpo->chol_update=0;
+    qpo->blas_suite=0;
+    qpo->refinement=0;
+}
 
 /* Return meta-data */
 typedef struct qpretStruct {
@@ -1512,11 +1525,14 @@ int msqp_solve_niq(qpdatStruct *qpd,
     inf1=vecop_norm(r1,nx,0);
     inf2=vecop_norm(r2,ny,0);
     oktostop=(inf1<thr1) && (inf2<thr2);
-    
-    /* TODO: proceed with 1-step iterative refinement if !oktostop, or better, always? */
-    /* ... */
-    
+
     kk=0;
+
+    if (qpo->refinement>0) {
+      /* TODO: proceed with 1-step iterative refinement if !oktostop, or better, always? */
+      /* ... */
+      kk++;
+    }
     
     /* evaluate cost function at the solution x (supposedly) */
     if (qpr != NULL)

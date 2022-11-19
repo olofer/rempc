@@ -86,7 +86,6 @@ int main(int argc,const char **argv)
 		init_by_array(_mt_init,_mt_length);
 	} else {
 		init_genrand((unsigned long)epochtime);
-		//init_by_array(_mt_init,_mt_length);
 	}
 
   const char bigPhiTextfilename[] = "bigPhi.txt";
@@ -94,9 +93,6 @@ int main(int argc,const char **argv)
   const char bigEllTextfilename[] = "bigEll.txt";
 	const char bigRhsTextfilename[] = "bigRhs.txt";
 	const char bigSolTextfilename[] = "bigSol.txt";
-
-  //const char bigWhyTextFilename[] = "bigWhy.txt"; // this is created by "nondense" block based method...
-  //const char bigEllWhyTextFilename[] = "bigEllWhy.txt"; // this is created by "nondense" block based method...
 
   const int minimumStages = __MULTISOLVER_MINIMUM_STAGES;
   const double PHI_EPSILON = 1.0e-1;
@@ -348,18 +344,10 @@ int main(int argc,const char **argv)
 		return_ok = (return_ok && (tmp == 1));
 
 		qpoptStruct qpo;
-		memset(&qpo, 0, sizeof(qpoptStruct));
+		setup_qpopt_defaults(&qpo);
 
 		qpretStruct qpr;
 		memset(&qpr, 0, sizeof(qpretStruct));
-
-		qpo.verbosity=DEFAULT_OPT_VERBOSITY;
-    qpo.maxiters=DEFAULT_OPT_MAXITERS;
-    qpo.ep=DEFAULT_OPT_EP;
-    qpo.eta=DEFAULT_OPT_ETA;
-    qpo.expl_sparse=0;
-    qpo.chol_update=0;
-    qpo.blas_suite=0;
 
     // need to setup a dummy cost function to avoid segmentation faults
 		for (int j = 0; j < qpd.nstg; j++) {
@@ -390,7 +378,7 @@ int main(int argc,const char **argv)
 
 		free(buffer);
 
-        for (int i = 0; i < nrhs; i++) {
+    for (int i = 0; i < nrhs; i++) {
 			const double err_cmult = test_Cmult(&qpd, bigCee);
 			const double err_ctmult = test_Ctmult(&qpd, bigCee);
 			printf("err-cmult-%i = %e\t err-ctmult-%i = %e\n", i, err_cmult, i, err_ctmult);
@@ -403,24 +391,22 @@ int main(int argc,const char **argv)
 	/* Transpose bigCee in place, factorize bigPhi in place,
 	   backsolve for Z in place, then create bigWhy and factorize bigWhy in place... neat!
 	 */
-	if (do_text_output_dump>0) {
-
-	printf("Creating and factorizing full dense Y (%i-by-%i) for reference...\n",ne,ne);
-	matopc_inplace_transpose(bigCee,ne,nd);
-	tmp=matopc_cholesky_decompose(bigPhi,&bigPhi[nd*nd],nd);
-	return_ok = (return_ok && (tmp == 0));
-	if (tmp!=0) {
-		printf("Cholesky decomposition of bigPhi failed.\n");
-	}
-	matopc_cholesky_trisubst_left_matrix(bigPhi,&bigPhi[nd*nd],nd,bigCee,bigCee,ne); // Z=L0\C'
-	matopc_mtm(bigWhy,bigCee,nd,ne,MATOPC_UPPER); // upper triangle of Y=Z'*Z
-	tmp=matopc_cholesky_decompose(bigWhy,&bigWhy[ne*ne],ne);
-	return_ok = (return_ok && (tmp == 0));
-	if (tmp!=0) {
-		printf("Cholesky decomposition of bigWhy failed.\n");
-	}
-
-	}
+  if (do_text_output_dump>0) {
+    printf("Creating and factorizing full dense Y (%i-by-%i) for reference...\n",ne,ne);
+    matopc_inplace_transpose(bigCee,ne,nd);
+    tmp=matopc_cholesky_decompose(bigPhi,&bigPhi[nd*nd],nd);
+    return_ok = (return_ok && (tmp == 0));
+    if (tmp!=0) {
+      printf("Cholesky decomposition of bigPhi failed.\n");
+    }
+    matopc_cholesky_trisubst_left_matrix(bigPhi,&bigPhi[nd*nd],nd,bigCee,bigCee,ne); // Z=L0\C'
+    matopc_mtm(bigWhy,bigCee,nd,ne,MATOPC_UPPER); // upper triangle of Y=Z'*Z
+    tmp=matopc_cholesky_decompose(bigWhy,&bigWhy[ne*ne],ne);
+    return_ok = (return_ok && (tmp == 0));
+    if (tmp!=0) {
+      printf("Cholesky decomposition of bigWhy failed.\n");
+    }
+  }
 
 	if (do_text_output_dump>0) {
 		matopc_zero_triangle(bigWhy,ne,MATOPC_UPPER);
