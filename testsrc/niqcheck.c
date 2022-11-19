@@ -74,6 +74,24 @@ double test_Ctmult(qpdatStruct* qpd,
 	return infnorm_err / infnorm;
 }
 
+double test_Hmult(qpdatStruct* qpd, 
+                  double* Phi) 
+{
+	const int nd = qpd->ndec;
+	double* x = malloc(sizeof(double) * nd);
+	double* y0 = malloc(sizeof(double) * nd);
+	double* y1 = malloc(sizeof(double) * nd);
+	matopc_randn(x, nd, 1);
+	matopc_ax(y0, Phi, nd, nd, x);
+	Hmult(qpd, x, y1);
+	const double infnorm_err = vecop_max_abs_diff(y0, y1, nd);
+	const double infnorm = vecop_norm(y0, nd, 0);
+	free(x);
+	free(y0);
+	free(y1);
+	return infnorm_err / infnorm;
+}
+
 /* Main entry-point */
 int main(int argc,const char **argv)
 {
@@ -93,6 +111,8 @@ int main(int argc,const char **argv)
   const char bigEllTextfilename[] = "bigEll.txt";
 	const char bigRhsTextfilename[] = "bigRhs.txt";
 	const char bigSolTextfilename[] = "bigSol.txt";
+
+	const double mult_tol = 1.0e-12;
 
   const int minimumStages = __MULTISOLVER_MINIMUM_STAGES;
   const double PHI_EPSILON = 1.0e-1;
@@ -358,12 +378,21 @@ int main(int argc,const char **argv)
 		for (int i = 0; i < nrhs; i++) {
 			qpd.ph = &buffer[(nd + ne) * i];
 			qpd.pd = &buffer[(nd + ne) * i + nd];
+
+			qpo.refinement = 0;
 			tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
 			return_ok = (return_ok && (tmp == 0));
 			printf("niq solve #%i | ok = %i\n", i, qpr.converged);
 			printf("inf1,inf2=%e, %e\n",qpr.inftuple[0],qpr.inftuple[1]);
+
 			memcpy(&buffer[(nd + ne) * i + nrhs * (nd + ne)], qpr.x, nd * sizeof(double));
 			memcpy(&buffer[nd + (nd + ne) * i + nrhs * (nd + ne)], &(qpr.x[nd]), ne * sizeof(double));
+
+			qpo.refinement = 1;
+			tmp = msqp_solve_niq(&qpd, &qpo, &qpr);
+			return_ok = (return_ok && (tmp == 0));
+			printf("niq solve #%i | ok = %i [1-step]\n", i, qpr.converged);
+			printf("inf1,inf2=%e, %e [1-step]\n",qpr.inftuple[0],qpr.inftuple[1]);
 		}
 
 		if (do_text_output_dump>0) {
@@ -381,7 +410,9 @@ int main(int argc,const char **argv)
     for (int i = 0; i < nrhs; i++) {
 			const double err_cmult = test_Cmult(&qpd, bigCee);
 			const double err_ctmult = test_Ctmult(&qpd, bigCee);
-			printf("err-cmult-%i = %e\t err-ctmult-%i = %e\n", i, err_cmult, i, err_ctmult);
+			const double err_hmult = test_Hmult(&qpd, bigPhi);
+			printf("err-cmult-%i = %e\t err-ctmult-%i = %e\t err-hmult-%i = %e\n", i, err_cmult, i, err_ctmult, i, err_hmult);
+			return_ok = return_ok && (err_cmult < mult_tol && err_ctmult < mult_tol && err_hmult < mult_tol);
 		}
 
     msqp_pdipm_free(&qpd, local_qpd_verbosity);

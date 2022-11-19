@@ -178,7 +178,7 @@ typedef struct qpoptStruct {
     int expl_sparse;    /* exploit sparsity of J,D if pos. */
     int verbosity;
     int blas_suite;     /* which suite of basic lin.alg. subprogs. ? */
-    int refinement;     /* one-step refinement (TBD) */
+    int refinement;     /* one-step refinement (only implemented for NIQ solver for now) */
 } qpoptStruct;
 
 void setup_qpopt_defaults(qpoptStruct* qpo) {
