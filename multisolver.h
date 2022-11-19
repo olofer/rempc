@@ -1441,8 +1441,6 @@ int msqp_pdipm_solve(qpdatStruct *qpd,qpoptStruct *qpo,qpretStruct *qpr) {
  * This is typically an order of magnitude faster than the full
  * PDIPM code (ie. with inequalities) for a same size problem.
  *
- * TODO: iterative refinement?
- *
  * TODO: note that typically the same diagonal block is
  *       decomposed many times (as many as the timesteps).
  *       This is quite stupid so add some technique to auto-detect
@@ -1458,7 +1456,7 @@ int msqp_solve_niq(qpdatStruct *qpd,
     double thr1,thr2;
     double inf1,inf2;
     double *vecwr;
-    double *x,*y,*tmp,*r1,*r2,*bet;
+    double *x,*y,*tmp,*r1,*r2,*bet,*d1,*d2;
     
     double *h=qpd->ph;
     double *d=qpd->pd;
@@ -1479,6 +1477,9 @@ int msqp_solve_niq(qpdatStruct *qpd,
     r1=&vecwr[ofs]; ofs+=nx;
     r2=&vecwr[ofs]; ofs+=ny;
     bet=&vecwr[ofs]; ofs+=ny;
+
+    d1=&vecwr[ofs]; ofs+=nx;
+    d2=&vecwr[ofs]; ofs+=ny;
     
     #ifdef __CLUMSY_ASSERTIONS__
     if (ofs>qpd->vecwrsz) {
@@ -1529,8 +1530,27 @@ int msqp_solve_niq(qpdatStruct *qpd,
     kk=0;
 
     if (qpo->refinement>0) {
-      /* TODO: proceed with 1-step iterative refinement if !oktostop, or better, always? */
-      /* ... */
+      /* proceed with 1-step "iterative" refinement */
+      PhiInverseMult(qpd,r1,tmp);
+      Cmult(qpd,tmp,bet);
+      vecop_macc(bet,ny,-1.0,r2,-1.0);
+      BlkCholSolve(qpd,bet,d2);
+      Ctmult(qpd,d2,tmp);
+      vecop_macc(tmp,nx,-1.0,r1,-1.0);
+      PhiInverseMult(qpd,tmp,d1);
+      vecop_subx(x,nx,d1);  // x -= d1
+      vecop_subx(y,ny,d2);  // y -= d2
+      /* need to recalculate the residuals */
+      Ctmult(qpd,y,tmp);
+      Hmult(qpd,x,r1);
+      vecop_addx(r1,nx,h);
+      vecop_addx(r1,nx,tmp); // r1 <- H*x + h + C'*y
+      Cmult(qpd,x,r2);
+      vecop_subx(r2,ny,d);   // r2 <- C*x - d
+      /* and the inf norm QA */
+      inf1=vecop_norm(r1,nx,0);
+      inf2=vecop_norm(r2,ny,0);
+      oktostop=(inf1<thr1) && (inf2<thr2);
       kk++;
     }
     
