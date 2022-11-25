@@ -1,2 +1,4 @@
 *.mex*
+build/*
+.vscode/*
 
