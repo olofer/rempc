@@ -7,8 +7,8 @@ Run `./test-octave-headless.sh` to compile with `mkoctfile` and run a basic test
 ## Build from within Octave or Matlab
 To rebuild the `MEX` program from within either `Matlab` or `Octave`, just type `build_qpmpclti2f` in the prompt.
 
-## Python interface
-Requires `numpy`. TBD.
+## Python interface (under construction)
+Requires `numpy`. Rebuild and check a user site version by calling `./remake-user.sh`.
 
 ## Standalone tests of solver components
 ```

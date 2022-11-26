@@ -2,3 +2,5 @@
 build/*
 .vscode/*
 testbuild/*
+dist/*
+*.egg-info/*
