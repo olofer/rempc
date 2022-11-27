@@ -15,22 +15,96 @@
 
 #include "multisolver.h"
 
+#include <stdbool.h>
+
+/*** UTILITIES ***/
+
+// Return NULL if no key in dict, or it is there but not a numpy array.
+// Optionally require a specific number of array dimensions.
+// Return array object as Fortran layout (possibly converted).
+PyObject* 
+get_numpy_array(PyObject* dict, 
+                const char* keyname, 
+                int requireDims)
+{
+  PyObject* item = PyDict_GetItemString(dict, keyname);
+  if (item == NULL) return NULL;
+  if (!PyArray_Check(item)) return NULL;
+  if (requireDims > 0)
+    if (PyArray_NDIM((PyArrayObject *) item) != requireDims)
+      return NULL;
+  PyObject *arr = PyArray_FROM_OTF(item, 
+                                   NPY_DOUBLE, 
+                                   NPY_ARRAY_IN_ARRAY|NPY_ARRAY_F_CONTIGUOUS|NPY_ARRAY_ALIGNED);
+  return arr;
+}
+
+void print_array_layout(PyArrayObject* a) {
+  const int nelems = PyArray_SIZE(a);
+  const double* e = PyArray_DATA(a);
+  printf("layout: ");
+  for (int i = 0; i < nelems; i++) {
+    printf("%f ", e[i]);
+  }
+  printf("\n");
+}
+
+bool np_is_empty(PyArrayObject* a) {
+  return (PyArray_SIZE(a) == 0);
+}
+
+bool np_is_scalar(PyArrayObject* a) {
+  return (PyArray_SIZE(a) == 1);
+}
+
+// assumes ndim == 2 confirmed already; false if scalar
+bool np_is_vector(PyArrayObject* a) {
+  const int nrows = PyArray_DIM(a, 0);
+  const int ncols = PyArray_DIM(a, 1);
+  return (nrows == 1 && ncols > 1) || (nrows > 1 && ncols == 1);
+}
+
 /*** MODULE ERRORS OBJECT ***/
 
 static PyObject *ModuleError;
 
 /*** EXPOSED FUNCTIONS ***/
 
+// Usage: result = qpmpclti2f(problem, options)
 static PyObject*
-mynew_funktion1(PyObject *self, 
-                PyObject *args)
+rempc_qpmpclti2f(PyObject *self, 
+                 PyObject *args)
 {
-    // TODO: basic function with positional arguments
-    Py_RETURN_NONE;
+  PyObject* problem_dict = NULL;
+  PyObject* options_dict = NULL;
+  if (!PyArg_ParseTuple(args, "O!O!", 
+                        &PyDict_Type, &problem_dict, 
+                        &PyDict_Type, &options_dict))
+    return NULL;
+
+  PyObject* A = get_numpy_array(problem_dict, "A", 2);
+  PyObject* B = get_numpy_array(problem_dict, "B", 2);
+
+  if (A != NULL) {
+    printf("isfortran(A) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) A));
+    print_array_layout((PyArrayObject *) A);
+  }
+
+  if (B != NULL) {
+    printf("isfortran(B) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) B));
+    print_array_layout((PyArrayObject *) B);
+  }
+
+  // TODO: port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
+
+  Py_XDECREF(A);
+  Py_XDECREF(B);
+
+  Py_RETURN_NONE;
 }
 
 static PyObject*
-mynew_funktion2(PyObject *self, 
+rempc_funktion2(PyObject *self, 
                 PyObject *args,
                 PyObject *kwds)
 {
@@ -39,7 +113,7 @@ mynew_funktion2(PyObject *self,
 }
 
 static PyObject*
-mynew_funktion3(PyObject *self)
+rempc_funktion3(PyObject *self)
 {
     // TODO: basic function with no arguments
     Py_RETURN_NONE;
@@ -48,11 +122,11 @@ mynew_funktion3(PyObject *self)
 /*** METHODS TABLE ***/
 
 static PyMethodDef rempc_methods[] = {
-    {"funktion1", (PyCFunction) mynew_funktion1, METH_VARARGS,
-     PyDoc_STR("Testfunktion 1: returns None.")},
-    {"funktion2", (PyCFunction) mynew_funktion2, METH_VARARGS|METH_KEYWORDS, // cannot have METH_KEYWORDS by itself.
+    {"qpmpclti2f", (PyCFunction) rempc_qpmpclti2f, METH_VARARGS,
+     PyDoc_STR("Basic MPC solver for LTI system.")},
+    {"funktion2", (PyCFunction) rempc_funktion2, METH_VARARGS|METH_KEYWORDS,
      PyDoc_STR("Testfunktion 2: returns None.")},
-    {"funktion3", (PyCFunction) mynew_funktion3, METH_NOARGS,
+    {"funktion3", (PyCFunction) rempc_funktion3, METH_NOARGS,
      PyDoc_STR("Testfunktion 3: returns None.")},
     {NULL, NULL, 0, NULL}  /* end-of-table */
 };
