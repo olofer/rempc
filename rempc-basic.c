@@ -64,6 +64,36 @@ bool np_is_vector(PyArrayObject* a) {
   return (nrows == 1 && ncols > 1) || (nrows > 1 && ncols == 1);
 }
 
+#define GRAB_QPO_INTEGER(strname, name) \
+  if ((o = PyDict_GetItemString(dict, strname)) != NULL) { \
+    if (!PyLong_Check(o)) return false; \
+    qpo->name = (int) PyLong_AsLong(o); \
+  } \
+
+#define GRAB_QPO_DOUBLE(strname, name) \
+  if ((o = PyDict_GetItemString(dict, strname)) != NULL) { \
+    if (!PyFloat_Check(o)) return false; \
+    qpo->name = PyFloat_AsDouble(o); \
+  } \
+
+// setup options struct based on Python dict (if dict is NULL, qpo will be default)
+bool assign_options_struct_from_dict(qpoptStruct* qpo,
+                                     PyObject* dict)
+{
+  setup_qpopt_defaults(qpo);
+  if (dict == NULL) return true;
+  PyObject* o = NULL;
+  GRAB_QPO_INTEGER("verbosity", verbosity)
+  GRAB_QPO_INTEGER("maxiters", maxiters)
+  GRAB_QPO_INTEGER("refinement", refinement)
+  GRAB_QPO_INTEGER("expl_sparse", expl_sparse)
+  GRAB_QPO_INTEGER("chol_update", chol_update)
+  GRAB_QPO_INTEGER("blas_suite", blas_suite)
+  GRAB_QPO_DOUBLE("eta", eta)
+  GRAB_QPO_DOUBLE("ep", ep)
+  return true;
+}
+
 /*** MODULE ERRORS OBJECT ***/
 
 static PyObject *ModuleError;
@@ -75,12 +105,22 @@ static PyObject*
 rempc_qpmpclti2f(PyObject *self, 
                  PyObject *args)
 {
+  qpoptStruct qpo;
+
   PyObject* problem_dict = NULL;
   PyObject* options_dict = NULL;
   if (!PyArg_ParseTuple(args, "O!O!", 
                         &PyDict_Type, &problem_dict, 
                         &PyDict_Type, &options_dict))
     return NULL;
+
+  if (!assign_options_struct_from_dict(&qpo, options_dict)) {
+    PyErr_SetString(ModuleError, "Failed to process options dict (2nd argument)");
+    return NULL;
+  }
+
+  printf("maxiters = %i\n", qpo.maxiters);
+  printf("eta      = %f\n", qpo.eta);
 
   PyObject* A = get_numpy_array(problem_dict, "A", 2);
   PyObject* B = get_numpy_array(problem_dict, "B", 2);
@@ -113,10 +153,22 @@ rempc_funktion2(PyObject *self,
 }
 
 static PyObject*
-rempc_funktion3(PyObject *self)
+rempc_options_qpmpclti2f(PyObject *self)
 {
-    // TODO: basic function with no arguments
-    Py_RETURN_NONE;
+  qpoptStruct qpo;
+  setup_qpopt_defaults(&qpo);
+
+  PyObject* newDict = Py_BuildValue("{s:i,s:i,s:d,s:d,s:i,s:i,s:i,s:i}",
+                                    "verbosity", qpo.verbosity, 
+                                    "maxiters", qpo.maxiters,
+                                    "ep", qpo.ep,
+                                    "eta", qpo.eta,
+                                    "expl_sparse", qpo.expl_sparse,
+                                    "chol_update", qpo.chol_update,
+                                    "blas_suite", qpo.blas_suite,
+                                    "refinement", qpo.refinement);
+
+  return newDict;
 }
 
 /*** METHODS TABLE ***/
@@ -126,8 +178,8 @@ static PyMethodDef rempc_methods[] = {
      PyDoc_STR("Basic MPC solver for LTI system.")},
     {"funktion2", (PyCFunction) rempc_funktion2, METH_VARARGS|METH_KEYWORDS,
      PyDoc_STR("Testfunktion 2: returns None.")},
-    {"funktion3", (PyCFunction) rempc_funktion3, METH_NOARGS,
-     PyDoc_STR("Testfunktion 3: returns None.")},
+    {"options_qpmpclti2f", (PyCFunction) rempc_options_qpmpclti2f, METH_NOARGS,
+     PyDoc_STR("Obtain default options for basic MPC solver.")},
     {NULL, NULL, 0, NULL}  /* end-of-table */
 };
 
