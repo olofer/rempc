@@ -11,6 +11,7 @@ O['eta'] = 0.965
 O['maxiters'] = 42
 print(O)
 
+P.update({'n' : int(10)})
 P.update({'A' : np.reshape(np.arange(20), (5, 4), order = 'C')})
 P.update({'B' : np.reshape(np.arange(20), (5, 4), order = 'F')})
 
