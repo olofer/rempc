@@ -320,6 +320,9 @@ rempc_qpmpclti2f(PyObject *self,
   memset(&qpDat, 0, sizeof(qpdatStruct));
   memset(&qpRet, 0, sizeof(qpretStruct));
 
+  int auxbufsz = 0, bufofs = 0;
+  double *pauxbuf = NULL;
+
   PyObject* problem_dict = NULL;
   PyObject* options_dict = NULL;
   if (!PyArg_ParseTuple(args, "O!O!", 
@@ -345,7 +348,7 @@ rempc_qpmpclti2f(PyObject *self,
   if (P.n + 1 < __MULTISOLVER_MINIMUM_STAGES)
     ERRORMESSAGE("Horizon is too short.")
 
-  int nx, nu, ny, nq, ns, nd, ni;
+  int nx, nu, ny, nq, ns = 0, nd, ni;
   const double *pA, *pB, *pC, *pD; // "const" will prob. break
 
   int hasOutput = 0;            /* is C!=0 ? */
@@ -369,12 +372,18 @@ rempc_qpmpclti2f(PyObject *self,
 
   double *pWn, *pQn;       /* used only with special terminal costs */
   int typWn, typQn;
-  double sWn, sQn, q0tmp;  
+  double sWn, sQn, q0tmp;
 
   /* These are constructed aux. data matrices */
   double *pJ = NULL, *pCstg = NULL, *pDstg = NULL, *pQstg = NULL;
   double *pCstg0 = NULL, *pDstg1 = NULL, *pQNstg = NULL;
   double *pCC1, *pCC2;
+
+  /* Meta-data storage for sparse J and D (if needed) */
+  sparseMatrix spJay;
+  sparseMatrix spDee;
+  spJay.buf = NULL; /* mark the sparse structs as unused */
+	spDee.buf = NULL;
 
   /* These are constructed aux. data vectors */
   double *pvecd = NULL, *pvecq = NULL, *pvecf = NULL, *pvecq0 = NULL, *pvecr = NULL, *prtmp = NULL;
@@ -429,7 +438,101 @@ rempc_qpmpclti2f(PyObject *self,
     ERRORMESSAGE("x does not have the correct number of elements")
   px = (double *) PyArray_DATA((PyArrayObject *) P.x);
 
-  // TODO: process F1, F2, and cost matrices, and signal vectors/matrices
+  /* Get nq, number of linear inequalities per stage */
+  if (P.F1 != NULL) {
+    if (nx != PyArray_DIM((PyArrayObject *) P.F1, 1))
+      ERRORMESSAGE("F1 has inconsistent dimensions");
+    nq = PyArray_DIM((PyArrayObject *) P.F1, 0);
+    pF1 = (double *) PyArray_DATA((PyArrayObject *) P.F1);
+    hasF1 = 0; /* set to 1 only if nonzero */
+    for (int qq = 0; qq < nq * nx; qq++) {
+      if (pF1[qq] != 0.0) { hasF1 = 1; break; }
+    }
+  } else {
+    hasF1 = 0;
+    nq = 0;
+    pF1 = NULL;
+  }
+
+  if (P.F2 != NULL) {
+    if (nu != PyArray_DIM((PyArrayObject *) P.F2, 1))
+      ERRORMESSAGE("F2 has inconsistent dimensions")
+    if (hasF1) {
+      if (PyArray_DIM((PyArrayObject *) P.F2, 0) != nq)
+        ERRORMESSAGE("F2 row-count does not match that of F1")
+    } else {
+      nq = PyArray_DIM((PyArrayObject *) P.F2, 0);
+    }
+    pF2 = (double *) PyArray_DATA((PyArrayObject *) P.F2);
+    hasF2 = 0;    /* set to 1 only if nonzero */
+    for (int qq = 0; qq < nq * nu; qq++) {
+      if (pF2[qq] != 0.0) { hasF2 = 1; break; }
+    }
+  } else {
+    hasF2 = 0;
+    pF2 = NULL;
+  }
+
+  /* If either of F1 or F2 is nonzero; there are inequalities present */
+  hasInequalities = ((hasF1 != 0 || hasF2 != 0) ? 1 : 0);
+
+  /* If hasInequalitites, then check whether constraint softening is requested; update ns accordingly */
+  if (hasInequalities > 0 && P.sc != NULL) {
+    const int sc_rows = PyArray_DIM((PyArrayObject *) P.sc, 0);
+    const int sc_cols = PyArray_DIM((PyArrayObject *) P.sc, 1);
+    /* Make sure sc is nq-by-1 or 1-by-nq; both are OK */
+	  if (!(((sc_rows == nq && sc_cols == 1)) || (sc_rows == 1 && sc_cols == nq)))
+      ERRORMESSAGE("Soft/slack cost vector length must have nq elements")
+    /* next extract the implied slack vector dimension (maximum nq, minimum 0) */
+    psc = (double *) PyArray_DATA((PyArrayObject *) P.sc);
+    for (int qq = 0; qq < nq; qq++)
+      if (psc[qq] > 0.0) ns++;
+      /* ... it is enough to just find the value of ns here;
+         then populate S and J later when req. storage is allocated
+       */
+    if (ns > 0) hasSlackCost = 1;
+  }
+
+  /* nd = dimension of stage-variable */
+  nd = nx + nu + ns;	/* also add ns, if ns>0 */
+  ni = nq + ns;
+
+  const int n = P.n;
+
+  /* Since the dimensions are known at this point; allocate aux. space */
+  auxbufsz = (n+1)*nx+(n+1)*nd+(n+1)*ni+ni*nd+nx*nd+nx*nd
+             +2*nx*nd+2*nx*nd+nd*nd+nd*nd+(n+1)+(n+1)*ny+ny
+             +nd*(nd+1)+nd*(nd+1)+ns;
+
+  pauxbuf = malloc(auxbufsz * sizeof(double));
+  if (pauxbuf == NULL)
+    ERRORMESSAGE("Failed to allocate aux. memory block")
+
+  bufofs=0;
+  pvecd=&pauxbuf[bufofs];  bufofs+=(n+1)*nx;
+  pvecq=&pauxbuf[bufofs];  bufofs+=(n+1)*nd;
+  pvecf=&pauxbuf[bufofs];  bufofs+=(n+1)*ni;
+  pJ=&pauxbuf[bufofs];     bufofs+=ni*nd;
+  pCstg=&pauxbuf[bufofs];  bufofs+=nx*nd;
+  pDstg=&pauxbuf[bufofs];  bufofs+=nx*nd;
+  pCstg0=&pauxbuf[bufofs]; bufofs+=2*nx*nd;
+  pDstg1=&pauxbuf[bufofs]; bufofs+=2*nx*nd;
+  pQstg=&pauxbuf[bufofs];  bufofs+=nd*nd;
+  pQNstg=&pauxbuf[bufofs]; bufofs+=nd*nd; /* this is unused unless Qxn or Wn are specified */
+  pvecq0=&pauxbuf[bufofs]; bufofs+=(n+1);
+  pvecr=&pauxbuf[bufofs];  bufofs+=(n+1)*ny;
+  prtmp=&pauxbuf[bufofs];  bufofs+=ny;
+  pCC1=&pauxbuf[bufofs];   bufofs+=nd*(nd+1); /* storage for cached common Cholesky factors, when applicable */
+  pCC2=&pauxbuf[bufofs];   bufofs+=nd*(nd+1);
+  pS=&pauxbuf[bufofs];     bufofs+=ns; /* NOTE: cannot be used if ns=0 */   
+    
+  if (bufofs != auxbufsz) {
+    printf("WARNING: auxbufsz=%i, bufofs=%i\n", auxbufsz, bufofs);
+  }
+
+  // ...
+  // TODO: cost matrices, and signal vectors/matrices
+  // ...
 
   /*
   if (P.A != NULL) {
@@ -450,10 +553,12 @@ rempc_qpmpclti2f(PyObject *self,
 
   // TODO: continue direct port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
 
+  if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
   Py_RETURN_NONE;
 
 offload_and_return_null:
+  if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
   return NULL;
 }
