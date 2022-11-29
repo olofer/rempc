@@ -47,10 +47,10 @@ typedef struct problemInputObjects {
 /* These types are used to decide the type of calculation needed 
  * when using the cost matrices W,R,Q,[Wn,Qn]
  */
-#define TYP_UNDEF -1
-#define TYP_SCALAR 0
-#define TYP_VECTOR 1
-#define TYP_MATRIX 2
+#define TYP_UNDEF  -1
+#define TYP_SCALAR  0
+#define TYP_VECTOR  1
+#define TYP_MATRIX  2
 #define TYP_MATRIXT 3   /* transposed matrix type */
 
 int aux_read_square_matrix(PyArrayObject* ao,
@@ -126,6 +126,30 @@ int aux_read_signal_matrix(PyArrayObject* ao,
   return retval;
 }
 
+bool np_is_empty(PyArrayObject* a) {
+  return (PyArray_SIZE(a) == 0);
+}
+
+bool np_is_scalar(PyArrayObject* a) {
+  return (PyArray_SIZE(a) == 1);
+}
+
+bool np_is_matrix(PyArrayObject* a) {
+  const int nrows = PyArray_DIM(a, 0);
+  const int ncols = PyArray_DIM(a, 1);
+  return (nrows > 1 && ncols > 1);
+}
+
+// assumes ndim == 2 confirmed already; true if scalar
+bool np_is_vector(PyArrayObject* a, 
+                  bool scalar_is_true)
+{
+  const int nrows = PyArray_DIM(a, 0);
+  const int ncols = PyArray_DIM(a, 1);
+  if (scalar_is_true && nrows == 1 && ncols == 1) return true;
+  return (nrows == 1 && ncols > 1) || (nrows > 1 && ncols == 1);
+}
+
 // Return NULL if no key in dict, or it is there but not a numpy array.
 // Optionally require a specific number of array dimensions.
 // Return array object as Fortran layout (possibly converted).
@@ -178,8 +202,9 @@ void loadProblemInputs(PyObject* dict, problemInputObjects* pIO) {
   return;
 }
 
+// All strict matrices (both m,n > 1) are required to have Fortran memory layout (if m or n is 1, it doesn't matter)
 #define CHECK_FORTRAN(a) \
-  if (a != NULL && !PyArray_ISFORTRAN((PyArrayObject *) a)) return false;
+  if (a != NULL && np_is_matrix((PyArrayObject *) a) && !PyArray_ISFORTRAN((PyArrayObject *) a)) return false;
 
 bool allFortranProblemInputs(const problemInputObjects* pIO) {
   CHECK_FORTRAN(pIO->A)
@@ -231,21 +256,6 @@ void print_array_layout(PyArrayObject* a) {
   printf("\n");
 }
 
-bool np_is_empty(PyArrayObject* a) {
-  return (PyArray_SIZE(a) == 0);
-}
-
-bool np_is_scalar(PyArrayObject* a) {
-  return (PyArray_SIZE(a) == 1);
-}
-
-// assumes ndim == 2 confirmed already; false if scalar
-bool np_is_vector(PyArrayObject* a) {
-  const int nrows = PyArray_DIM(a, 0);
-  const int ncols = PyArray_DIM(a, 1);
-  return (nrows == 1 && ncols > 1) || (nrows > 1 && ncols == 1);
-}
-
 #define GRAB_DICT_INTEGER(strname, lhsname) \
   if ((o = PyDict_GetItemString(dict, strname)) != NULL) { \
     if (!PyLong_Check(o)) return false; \
@@ -274,6 +284,17 @@ bool assign_options_struct_from_dict(qpoptStruct* qpo,
   GRAB_DICT_DOUBLE("eta", qpo->eta)
   GRAB_DICT_DOUBLE("ep", qpo->ep)
   return true;
+}
+
+void print_options_struct(const qpoptStruct* qpo) {
+  printf("verbosity   = %i\n", qpo->verbosity);
+  printf("maxiters    = %i\n", qpo->maxiters);
+  printf("eta         = %f\n", qpo->eta);
+  printf("ep          = %f\n", qpo->ep);
+  printf("refinement  = %i\n", qpo->refinement);
+  printf("expl_sparse = %i\n", qpo->expl_sparse);
+  printf("chol_update = %i\n", qpo->chol_update);
+  printf("blas_suite  = %i\n", qpo->blas_suite);
 }
 
 /*** MODULE ERRORS OBJECT ***/
@@ -311,21 +332,106 @@ rempc_qpmpclti2f(PyObject *self,
     return NULL;
   }
 
-  //printf("maxiters = %i\n", qpOpt.maxiters);
-  //printf("eta      = %f\n", qpOpt.eta);
+  if (qpOpt.verbosity > 1)
+    print_options_struct(&qpOpt);
 
   loadProblemInputs(problem_dict, &P);
 
   if (!allFortranProblemInputs(&P))
     ERRORMESSAGE("All available input arrays are not Fortran")
 
+  // TBD: if super-verbose, make an explicit test of the strides of all matrices; are they exactly as expected for Fortran layout?
+
   if (P.n + 1 < __MULTISOLVER_MINIMUM_STAGES)
     ERRORMESSAGE("Horizon is too short.")
 
-  // continue setting up problem dimensions and all such checks!
+  int nx, nu, ny, nq, ns, nd, ni;
+  const double *pA, *pB, *pC, *pD; // "const" will prob. break
 
-  /*printf("P.n = %i\n", P.n);
+  int hasOutput = 0;            /* is C!=0 ? */
+  int hasDirectTerm = 0;        /* is D!=0 ? */
+  int hasF1 = 0, hasF2 = 0;
+  int hasInequalities = 0;      /* is F1!=0 or F2!=0 ? */
+  int hasSlackCost = 0;         /* slack variable extension required? ns>0? */
+  int hasTerminalQ = 0;         /* Qn exists? */
+  int hasTerminalW = 0;         /* Wn exists? */
+  int prblmClass = -1;
 
+  double *pW, *pR, *pQ, *pS;     /* Cost term matrices */
+  int typW, typR, typQ; /*,typS;*/
+  double sW, sR, sQ; /*,sS;*/         /* Only used if typX = TYP_SCALAR */
+
+  double *pF1, *pF2;
+
+  double *pw, *pr, *px, *pf3, *psc=NULL;	/* vectors & vector signals */
+  int typw, typr, typf3;
+  double sw, sr, sf3;  
+
+  double *pWn, *pQn;       /* used only with special terminal costs */
+  int typWn, typQn;
+  double sWn, sQn, q0tmp;  
+
+  /* These are constructed aux. data matrices */
+  double *pJ = NULL, *pCstg = NULL, *pDstg = NULL, *pQstg = NULL;
+  double *pCstg0 = NULL, *pDstg1 = NULL, *pQNstg = NULL;
+  double *pCC1, *pCC2;
+
+  /* These are constructed aux. data vectors */
+  double *pvecd = NULL, *pvecq = NULL, *pvecf = NULL, *pvecq0 = NULL, *pvecr = NULL, *prtmp = NULL;
+
+  // define pA and nx
+  if (P.A == NULL)
+    ERRORMESSAGE("No system matrix A")
+  nx = PyArray_DIM((PyArrayObject *) P.A, 0);
+  if (nx != PyArray_DIM((PyArrayObject *) P.A, 1))
+    ERRORMESSAGE("System matrix A must be square")
+  pA = (const double *) PyArray_DATA((PyArrayObject *) P.A);
+
+  // define pB and nu
+  if (P.B == NULL)
+    ERRORMESSAGE("No input matrix B")
+  if (nx != PyArray_DIM((PyArrayObject *) P.B, 0))
+    ERRORMESSAGE("B and A must have same number of rows")
+  nu = PyArray_DIM((PyArrayObject *) P.B, 1);
+  pB = (const double *) PyArray_DATA((PyArrayObject *) P.B);
+
+  // setup pC and ny (if given)
+  if (P.C != NULL) {
+    if (nx != PyArray_DIM((PyArrayObject *) P.C, 1))
+      ERRORMESSAGE("C and A must have same number of columns")
+    ny = PyArray_DIM((PyArrayObject *) P.C, 0);
+    pC = (const double *) PyArray_DATA((PyArrayObject *) P.C);
+    hasOutput = 1;
+  } else {
+    pC = NULL;
+    ny = 0;
+    hasOutput = 0;
+  }
+
+  // setup pD when applicable
+  if (P.D != NULL && hasOutput != 0) {
+    if (ny != PyArray_DIM((PyArrayObject *) P.D, 0))
+      ERRORMESSAGE("D and C must have same number of rows")
+    if (nu != PyArray_DIM((PyArrayObject *) P.D, 1))
+      ERRORMESSAGE("D and B must have same number of columns")
+    pD = (const double *) PyArray_DATA((PyArrayObject *) P.D);
+    hasDirectTerm = 1;
+  } else {
+    hasDirectTerm = 0;
+    pD = NULL;
+  }
+
+  if (P.x == NULL)
+    ERRORMESSAGE("State vector x must be provided")
+  if (!np_is_vector((PyArrayObject *) P.x, true))
+    ERRORMESSAGE("x must be a vector (or scalar)")
+  if (PyArray_SIZE((PyArrayObject *) P.x) != nx)
+    ERRORMESSAGE("x does not have the correct number of elements")
+  px = (double *) PyArray_DATA((PyArrayObject *) P.x);
+
+  // TODO: process F1, F2, and cost matrices, and signal vectors/matrices
+
+  /*
   if (P.A != NULL) {
     printf("isfortran(P.A) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) P.A));
     print_array_layout((PyArrayObject *) P.A);
@@ -336,7 +442,13 @@ rempc_qpmpclti2f(PyObject *self,
     print_array_layout((PyArrayObject *) P.B);
   }*/
 
-  // TODO: port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
+  if (qpOpt.verbosity > 0) {
+    printf("mpc horizon: 0..%i.\n", P.n);
+    printf("system: (states,inputs,outputs):[hasout,dterm] = (%i,%i,%i):[%i,%i].\n", nx, nu, ny, hasOutput, hasDirectTerm);
+    printf("inequalities: (hasF1,hasF2,nq,ns) = (%i,%i,%i,%i).\n", hasF1, hasF2, nq, ns);
+  }
+
+  // TODO: continue direct port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
 
   offloadProblemInputs(&P);
   Py_RETURN_NONE;
