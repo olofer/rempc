@@ -1,10 +1,14 @@
+/*
+  Remake of qpmpclti2f.c MEX source code as Python C extension.
+*/
+
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "numpy/arrayobject.h"
 
 #undef __DEVELOPMENT_TEXT_OUTPUT__ 
 #undef __CLUMSY_ASSERTIONS__
-#undef __COMPILE_WITH_INTERNAL_TICTOC__ 
+#define __COMPILE_WITH_INTERNAL_TICTOC__ 
 
 #include "vectorops.h"
 #include "matrixopsc.h"
@@ -39,6 +43,88 @@ typedef struct problemInputObjects {
   PyObject* Wn;  // "Wn",
   PyObject* sc;  // "sc"
 } problemInputObjects;
+
+/* These types are used to decide the type of calculation needed 
+ * when using the cost matrices W,R,Q,[Wn,Qn]
+ */
+#define TYP_UNDEF -1
+#define TYP_SCALAR 0
+#define TYP_VECTOR 1
+#define TYP_MATRIX 2
+#define TYP_MATRIXT 3   /* transposed matrix type */
+
+int aux_read_square_matrix(PyArrayObject* ao,
+                           int n,
+                           int *typ,
+                           double *sclr,
+                           double **ptr)
+{
+  const int M = PyArray_DIM(ao, 0);
+  const int N = PyArray_DIM(ao, 1);
+  int retval = 1;
+  if (M == 1 && N == 1) {
+    *typ = TYP_SCALAR; 
+    *sclr = *((double *) PyArray_DATA(ao)); 
+    *ptr = sclr;
+  } else if ((M == n && N == 1) ||
+             (M == 1 && N == n)) {
+    /* interpret the n numbers as the diagonal in a matrix */
+    *typ = TYP_VECTOR; 
+    *sclr = -1;
+    *ptr = (double *) PyArray_DATA(ao);
+  } else if (M == n && N == n) {
+    /* full matrix n-by-n */
+    *typ = TYP_MATRIX; 
+    *sclr = -1; 
+    *ptr = (double *) PyArray_DATA(ao);
+  } else {
+    *typ = TYP_UNDEF; 
+    *sclr = 0; 
+    *ptr = NULL;
+    retval = 0;
+  }
+  return retval;
+}
+
+int aux_read_signal_matrix(PyArrayObject* ao,
+                           int n,
+                           int nt,
+                           int *typ,
+                           double *sclr,
+                           double **ptr) 
+{
+  const int M = PyArray_DIM(ao, 0);
+  const int N = PyArray_DIM(ao, 1);
+  int retval = 1;
+  if (M == 1 && N == 1) {
+    /* Check first if scalar */
+    *typ = TYP_SCALAR; 
+    *sclr = *((double *) PyArray_DATA(ao)); 
+    *ptr = sclr;
+  } else if ((M == n && N == 1) ||
+             (M == 1 && N == n)) {
+    /* n-vector, row or column; assumed to be constant over nt timesteps */
+    *typ = TYP_VECTOR; 
+    *sclr = -1; 
+    *ptr = (double *) PyArray_DATA(ao);
+  } else if (M == n && N == nt) {
+    /* full matrix n-by-nt */
+    *typ = TYP_MATRIX; 
+    *sclr = -1; 
+    *ptr = (double *) PyArray_DATA(ao);
+  } else if (M == nt && N == n) {
+    /* full matrix nt-by-n (transposed, non-transposed has precedence) */
+    *typ = TYP_MATRIXT; 
+    *sclr = -1; 
+    *ptr = (double *) PyArray_DATA(ao);
+  } else {
+    *typ = TYP_UNDEF; 
+    *sclr = 0; 
+    *ptr = NULL;
+    retval = 0;
+  }
+  return retval;
+}
 
 // Return NULL if no key in dict, or it is there but not a numpy array.
 // Optionally require a specific number of array dimensions.
@@ -92,9 +178,28 @@ void loadProblemInputs(PyObject* dict, problemInputObjects* pIO) {
   return;
 }
 
-// ...
-// TODO: sanity check routine; double check Fortran property and such ...
-// ...
+#define CHECK_FORTRAN(a) \
+  if (a != NULL && !PyArray_ISFORTRAN((PyArrayObject *) a)) return false;
+
+bool allFortranProblemInputs(const problemInputObjects* pIO) {
+  CHECK_FORTRAN(pIO->A)
+  CHECK_FORTRAN(pIO->B)
+  CHECK_FORTRAN(pIO->C)
+  CHECK_FORTRAN(pIO->D)
+  CHECK_FORTRAN(pIO->Qx)
+  CHECK_FORTRAN(pIO->W)
+  CHECK_FORTRAN(pIO->R)
+  CHECK_FORTRAN(pIO->F1)
+  CHECK_FORTRAN(pIO->F2)
+  CHECK_FORTRAN(pIO->f3)
+  CHECK_FORTRAN(pIO->w)
+  CHECK_FORTRAN(pIO->r)
+  CHECK_FORTRAN(pIO->x)
+  CHECK_FORTRAN(pIO->Qxn)
+  CHECK_FORTRAN(pIO->Wn)
+  CHECK_FORTRAN(pIO->sc)
+  return true;
+}
 
 void offloadProblemInputs(problemInputObjects* pIO) {
   Py_XDECREF(pIO->A);
@@ -175,6 +280,10 @@ bool assign_options_struct_from_dict(qpoptStruct* qpo,
 
 static PyObject *ModuleError;
 
+#define ERRORMESSAGE(msg) \
+  { PyErr_SetString(ModuleError, msg); \
+    goto offload_and_return_null; } \
+
 /*** EXPOSED FUNCTIONS ***/
 
 // Usage: result = qpmpclti2f(problem, options)
@@ -207,7 +316,15 @@ rempc_qpmpclti2f(PyObject *self,
 
   loadProblemInputs(problem_dict, &P);
 
-  printf("P.n = %i\n", P.n);
+  if (!allFortranProblemInputs(&P))
+    ERRORMESSAGE("All available input arrays are not Fortran")
+
+  if (P.n + 1 < __MULTISOLVER_MINIMUM_STAGES)
+    ERRORMESSAGE("Horizon is too short.")
+
+  // continue setting up problem dimensions and all such checks!
+
+  /*printf("P.n = %i\n", P.n);
 
   if (P.A != NULL) {
     printf("isfortran(P.A) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) P.A));
@@ -217,22 +334,27 @@ rempc_qpmpclti2f(PyObject *self,
   if (P.B != NULL) {
     printf("isfortran(P.B) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) P.B));
     print_array_layout((PyArrayObject *) P.B);
-  }
+  }*/
 
   // TODO: port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
 
   offloadProblemInputs(&P);
   Py_RETURN_NONE;
+
+offload_and_return_null:
+  offloadProblemInputs(&P);
+  return NULL;
 }
 
+/*
 static PyObject*
 rempc_funktion2(PyObject *self, 
                 PyObject *args,
                 PyObject *kwds)
 {
-    // TODO: basic function with keyword arguments
-    Py_RETURN_NONE;
+  Py_RETURN_NONE;
 }
+*/
 
 static PyObject*
 rempc_options_qpmpclti2f(PyObject *self)
@@ -258,8 +380,8 @@ rempc_options_qpmpclti2f(PyObject *self)
 static PyMethodDef rempc_methods[] = {
     {"qpmpclti2f", (PyCFunction) rempc_qpmpclti2f, METH_VARARGS,
      PyDoc_STR("Basic MPC solver for LTI system.")},
-    {"funktion2", (PyCFunction) rempc_funktion2, METH_VARARGS|METH_KEYWORDS,
-     PyDoc_STR("Testfunktion 2: returns None.")},
+    /*{"funktion2", (PyCFunction) rempc_funktion2, METH_VARARGS|METH_KEYWORDS,
+     PyDoc_STR("Testfunktion 2: returns None.")},*/
     {"options_qpmpclti2f", (PyCFunction) rempc_options_qpmpclti2f, METH_NOARGS,
      PyDoc_STR("Obtain default options for basic MPC solver.")},
     {NULL, NULL, 0, NULL}  /* end-of-table */
