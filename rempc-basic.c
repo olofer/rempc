@@ -2,6 +2,11 @@
   Remake of qpmpclti2f.c MEX source code as Python C extension.
 */
 
+// FIXME: fxoft output key
+//        return elapsed clocks
+//        set a "complete" docstring (from 2e matlab program header)
+//        develop a Python test program (port of afti16 "benchmark"...)
+
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "numpy/arrayobject.h"
@@ -366,6 +371,17 @@ void print_options_struct(const qpoptStruct* qpo) {
   printf("blas_suite  = %i\n", qpo->blas_suite);
 }
 
+// Assume arr has 2 dimensions; and contiguous; want to work with it as Fortran layout
+void enforce_fortran_property(PyArrayObject* arr) {
+  PyArray_CLEARFLAGS(arr, NPY_ARRAY_CARRAY);
+  PyArray_ENABLEFLAGS(arr, NPY_ARRAY_FARRAY);
+  const npy_intp sz = PyArray_ITEMSIZE(arr);
+  npy_intp* strides = PyArray_STRIDES(arr);
+  strides[0] = sz;
+  strides[1] = sz * PyArray_DIM(arr, 0);
+  return;
+}
+
 PyObject* createReturnDict(int retcode,
                            int problemClass,
                            const qpretStruct* qpRet,
@@ -392,10 +408,69 @@ PyObject* createReturnDict(int retcode,
   PyDict_SetItemString(newDict, "inftuple", inftuple);
   PyDict_SetItemString(newDict, "qpclass", PyUnicode_FromString(prblm_class_names[problemClass]));
   if (retcode == 0) {
-    // remember to never create some of the keys unless solution is converged
-    // and here we need to create Fortran style numpy arrays if the MEX code should work "as is"
-    // ..
+    const int nd = nx + nu + ns;
+    const double* px = qpRet->x;
+
+    /* Evaluate the part of the cost that comes from the slack terms only;
+       Return it in the report field "fxoft"; it is very easy to compute 
+       due to the implicit diagonal structure of the S matrix.
+     */
+    /*if (ns>0) {
+      dd=0.0; kk=nx+nu;
+      for (qq=0;qq<n+1;qq++) {
+      	pdd=(double *)&qpRet.x[kk];
+      	for (ll=0;ll<ns;ll++) dd+=pdd[ll]*pS[ll]*pdd[ll];
+      	kk+=nd;
+      }
+      mxSetFieldByNumber(REPSTRUCT,0,REP_FXOFT,mxCreateDoubleScalar(dd));
+    }*/
+
+    if (numReturnStepsU > 0) {
+      if (numReturnStepsU > n + 1) numReturnStepsU = n + 1; /* clip if needed */
+      const npy_intp utraj_dims[] = {numReturnStepsU, nu};
+      PyObject* utraj_object = PyArray_SimpleNew(2, utraj_dims, NPY_DOUBLE);
+      enforce_fortran_property((PyArrayObject *) utraj_object);
+      int kk = nx; 
+      double* pdd = (double *) PyArray_DATA((PyArrayObject *) utraj_object);
+      for (int ll = 0; ll < numReturnStepsU; ll++) {
+        for (int mm = 0; mm < nu; mm++)
+          pdd[mm * numReturnStepsU + ll] = px[kk + mm];
+        kk += nd;
+      }
+      PyDict_SetItemString(newDict, "utraj", utraj_object);
+    }
+
+    if (numReturnStepsX > 0) {
+      if (numReturnStepsX > n + 1) numReturnStepsX = n + 1; /* clip if needed */
+      const npy_intp xtraj_dims[] = {numReturnStepsX, nx};
+      PyObject* xtraj_object = PyArray_SimpleNew(2, xtraj_dims, NPY_DOUBLE);
+      enforce_fortran_property((PyArrayObject *) xtraj_object);
+      int kk = 0; 
+      double* pdd = (double *) PyArray_DATA((PyArrayObject *) xtraj_object);
+      for (int ll = 0; ll < numReturnStepsX; ll++) {
+        for (int mm = 0; mm < nx; mm++)
+          pdd[mm * numReturnStepsX + ll] = px[kk + mm];
+        kk += nd;
+      }
+      PyDict_SetItemString(newDict, "xtraj", xtraj_object);
+    }
+
+    if (ns > 0 && numReturnStepsS > 0) {
+      if (numReturnStepsS > n + 1) numReturnStepsS = n + 1; /* clip if needed */
+      const npy_intp straj_dims[] = {numReturnStepsS, ns};
+      PyObject* straj_object = PyArray_SimpleNew(2, straj_dims, NPY_DOUBLE);
+      enforce_fortran_property((PyArrayObject *) straj_object);
+      int kk = nx + nu;
+      double* pdd = (double *) PyArray_DATA((PyArrayObject *) straj_object);
+      for (int ll = 0; ll < numReturnStepsS; ll++) {
+        for (int mm = 0; mm < ns; mm++)
+          pdd[mm * numReturnStepsS + ll] = px[kk + mm];
+        kk += nd;
+      }
+      PyDict_SetItemString(newDict, "straj", straj_object);
+    }
   }
+
   return newDict;
 }
 
@@ -1167,16 +1242,6 @@ offload_and_return_null:
   return NULL;
 }
 
-/*
-static PyObject*
-rempc_funktion2(PyObject *self, 
-                PyObject *args,
-                PyObject *kwds)
-{
-  Py_RETURN_NONE;
-}
-*/
-
 static PyObject*
 rempc_options_qpmpclti2f(PyObject *self)
 {
@@ -1201,8 +1266,6 @@ rempc_options_qpmpclti2f(PyObject *self)
 static PyMethodDef rempc_methods[] = {
     {"qpmpclti2f", (PyCFunction) rempc_qpmpclti2f, METH_VARARGS,
      PyDoc_STR("Basic MPC solver for LTI system.")},
-    /*{"funktion2", (PyCFunction) rempc_funktion2, METH_VARARGS|METH_KEYWORDS,
-     PyDoc_STR("Testfunktion 2: returns None.")},*/
     {"options_qpmpclti2f", (PyCFunction) rempc_options_qpmpclti2f, METH_NOARGS,
      PyDoc_STR("Obtain default options for basic MPC solver.")},
     {NULL, NULL, 0, NULL}  /* end-of-table */

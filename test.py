@@ -33,7 +33,6 @@ print(P['C'].flatten(order = 'K'))
 print('isfortran(C) = {}'.format(np.isfortran(P['C'])))
 
 R = rempc.qpmpclti2f(P, O)
-
-#assert R is None
-print(R)
+assert isinstance(R, dict)
+print(R.keys())
 print('reached end of {}'.format(__file__))
