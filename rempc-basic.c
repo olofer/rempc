@@ -7,7 +7,7 @@
 #include "numpy/arrayobject.h"
 
 #undef __DEVELOPMENT_TEXT_OUTPUT__ 
-#undef __CLUMSY_ASSERTIONS__
+#define __CLUMSY_ASSERTIONS__
 #define __COMPILE_WITH_INTERNAL_TICTOC__ 
 
 #include "vectorops.h"
@@ -42,6 +42,9 @@ typedef struct problemInputObjects {
   PyObject* Qxn; // "Qxn",
   PyObject* Wn;  // "Wn",
   PyObject* sc;  // "sc"
+  int xreturn;
+  int ureturn;
+  int sreturn;
 } problemInputObjects;
 
 /* These types are used to decide the type of calculation needed 
@@ -262,6 +265,9 @@ void loadProblemInputs(PyObject* dict, problemInputObjects* pIO) {
   pIO->Qxn = get_numpy_array(dict, "Qxn", 2);
   pIO->Wn  = get_numpy_array(dict, "Wn", 2);
   pIO->sc  = get_numpy_array(dict, "sc", 2);
+  pIO->xreturn = get_integer_from_dict(dict, "xreturn"); // 0 if not provided (or not integer)
+  pIO->ureturn = get_integer_from_dict(dict, "ureturn");
+  pIO->sreturn = get_integer_from_dict(dict, "sreturn");
   return;
 }
 
@@ -385,6 +391,7 @@ rempc_qpmpclti2f(PyObject *self,
 
   int auxbufsz = 0, bufofs = 0;
   double *pauxbuf = NULL;
+  stageStruct *pStages = NULL;
 
   PyObject* problem_dict = NULL;
   PyObject* options_dict = NULL;
@@ -919,20 +926,101 @@ rempc_qpmpclti2f(PyObject *self,
     sparseMatrixCreate(&spDee, pDstg, nx, nd);
   }
 
-  // TODO: handle xreturn, ureturn, sreturn (probably best part of problem dict P)
+  /* Set the default return variable options: full control trajectory
+   * but nothing for the state trajectory.
+   */
+  int numReturnStepsU = n + 1;
+  int numReturnStepsX = 0;
+  int numReturnStepsS = 0;
 
+  if (P.ureturn > 0) numReturnStepsU = P.ureturn;
+  if (P.xreturn > 0) numReturnStepsX = P.xreturn;
+  if (P.sreturn > 0) numReturnStepsS = P.sreturn;
+
+  /* Allocate stage structure and initialize the pointers */
+  pStages = (stageStruct *) malloc((n + 1) * sizeof(stageStruct));
+  if (pStages == NULL)
+    ERRORMESSAGE("Stage struct array memory allocation failure")
+
+  /* Initialize the stage struct array */
+  int ll = 0, kk = 0, mm = 0;
+  for (int qq = 0; qq <= n; qq++) {
+    stageStruct* thisStage = &pStages[qq];
+    thisStage->idx = qq;
+    thisStage->nd = nd;   /* in general: nd=nx+nu+ns */
+    thisStage->niq = ni; /* nq+ns = ni (was ...=nq) */
+    if (qq == 0) {
+      /* Stage 0 includes initial condition equality constraint */
+      thisStage->neq = 2 * nx;
+    } else if (qq == n) {
+      thisStage->neq = 0;
+    } else {
+      thisStage->neq = nx;
+    }
+    /* Setup data pointers */
+    thisStage->ptrQ = pQstg;
+    thisStage->ptrJ = pJ; /* ... */
+    thisStage->ptrq = &pvecq[qq * nd];
+    thisStage->ptrq0 = &pvecq0[qq];
+    thisStage->ptrf = &pvecf[qq * ni]; /* was qq*nq*/
+    thisStage->ptrd = &pvecd[ll];
+    ll += thisStage->neq;
+    kk += thisStage->niq;
+    mm += (thisStage->nd) * (thisStage->nd) + (thisStage->nd);
+    thisStage->ptrC = NULL;  /* C does not exist for stage n */
+    if (qq == 0) {
+      thisStage->ptrC = pCstg0;
+    } else if (qq < n) {
+      thisStage->ptrC = pCstg;
+    }
+    thisStage->ptrD = NULL; /* D does not exist for stage 0 */
+    if (qq == 1) {
+      thisStage->ptrD = pDstg1;
+      thisStage->ptrDsp = NULL; /* TODO: special sparse matrix object for first stage (may not be worth it though) */
+    } else if (qq > 1) {
+      thisStage->ptrD = pDstg;
+      thisStage->ptrDsp = (spDee.buf == NULL ? NULL : &spDee);
+    }
+    thisStage->ptrL = NULL; /* must be initialized separately, when needed */
+
+    /*mexPrintf("stage=%i: (neq=%i)\n",pStages[qq].idx,pStages[qq].neq);*/
+
+    /* J is shared for every stage in the present formulation */
+    thisStage->ptrJsp = (spJay.buf == NULL ? NULL : &spJay);
+  }
+
+  #ifdef __CLUMSY_ASSERTIONS__
+  if (kk != ni * (n + 1) || ll != nx * (n + 1))
+    ERRORMESSAGE("Eq. or ineq. sizing error(s)")
+  #endif
+
+  /* Modify matrix pointer for the last stage if there is a special terminal cost matrix */
+  if (hasTerminalQ > 0 || hasTerminalW > 0)
+    pStages[n].ptrQ = pQNstg;
+
+  // PERHAPS init before metadata assignment?
   // ...
-  // TODO: setup and solve problem!
-  // ...
 
+  /* Setup problem meta data structure (collection of pointers mostly) */
+  qpDat.ndec = (n + 1) * nd;
+  qpDat.neq = (n + 1) * nx;
+  qpDat.niq = (n + 1) * ni; /* (was nq*(n+1)) */
+  qpDat.ph = pvecq;
+  qpDat.pf = pvecf;
+  qpDat.pd = pvecd;
+  qpDat.nstg = n + 1;         /* qq=0..n; there are n+1 stages */
+  qpDat.pstg = pStages;
 
+  // TODO: initialize solver, then solve!
   // TBD: figure out how to build the output dict efficiently
 
+  if (pStages != NULL) free(pStages);
   if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
   Py_RETURN_NONE;
 
 offload_and_return_null:
+  if (pStages != NULL) free(pStages);
   if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
   return NULL;
