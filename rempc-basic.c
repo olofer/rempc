@@ -892,18 +892,11 @@ rempc_qpmpclti2f(PyObject *self,
     }
   }
 
-  // TODO: if very verbose; print out a stage matrix?
-
-  // ...
-  // TODO: setup and solve problem!
-  // ...
-
   /*
   if (P.A != NULL) {
     printf("isfortran(P.A) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) P.A));
     print_array_layout((PyArrayObject *) P.A);
   }
-
   if (P.B != NULL) {
     printf("isfortran(P.B) = %i\n", PyArray_ISFORTRAN((PyArrayObject *) P.B));
     print_array_layout((PyArrayObject *) P.B);
@@ -914,6 +907,24 @@ rempc_qpmpclti2f(PyObject *self,
     printf("system: (states,inputs,outputs):[hasout,dterm] = (%i,%i,%i):[%i,%i].\n", nx, nu, ny, hasOutput, hasDirectTerm);
     printf("inequalities: (hasF1,hasF2,nq,ns) = (%i,%i,%i,%i).\n", hasF1, hasF2, nq, ns);
   }
+
+  /* Now create sparse block representations; if requested
+   * Note that this may fail e.g. if matrices are deemed too dense; let the failure
+   * be silent; the rest of the code runs through anyway.
+   */
+  if (qpOpt.expl_sparse > 0) {
+    if (hasInequalities > 0) {
+    	sparseMatrixCreate(&spJay, pJ, ni, nd); /* was nq,nd */
+    }
+    sparseMatrixCreate(&spDee, pDstg, nx, nd);
+  }
+
+  // TODO: handle xreturn, ureturn, sreturn (probably best part of problem dict P)
+
+  // ...
+  // TODO: setup and solve problem!
+  // ...
+
 
   // TBD: figure out how to build the output dict efficiently
 
