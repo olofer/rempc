@@ -126,6 +126,69 @@ int aux_read_signal_matrix(PyArrayObject* ao,
   return retval;
 }
 
+/*
+ * Aux. sub-program to create symmetric cost-matrices.
+ */
+
+void aux_compute_sym_cost_matrix(
+        int nd,int nx,int nu,int ny,double *pQstg,
+        int typQ,double sQ,double *pQ,
+        int typR,double sR,double *pR,
+        int typW,double sW,double *pW,
+        double *pC,double *pD)
+{    
+  /* pQstg points to the nd-by-nd storage for this matrix */
+  matopc_zeros(pQstg,nd,nd);
+    
+  if (typQ==TYP_SCALAR) {
+    matopc_sub_assign_diag_scalar(pQstg,nd,nd,0,0,2.0*sQ,nx,-1);
+  } else if (typQ==TYP_VECTOR) {
+    matopc_sub_assign_scaled_diag_vector(pQstg,nd,nd,0,0,pQ,nx,-1,2.0);
+  } else { /*TODO: this could be made faster with a symmetrized assign */
+    matopc_sub_assign_scaled(pQstg,nd,nd,0,0,pQ,nx,nx,-1,2.0);
+  }
+    
+  if (typR==TYP_SCALAR) {
+    matopc_sub_assign_diag_scalar(pQstg,nd,nd,nx,nx,2.0*sR,nu,-1);
+  } else if (typR==TYP_VECTOR) {
+    matopc_sub_assign_scaled_diag_vector(pQstg,nd,nd,nx,nx,pR,nu,-1,2.0);
+  } else { /*TODO: this could be made faster with a symmetrized assign */
+    matopc_sub_assign_scaled(pQstg,nd,nd,nx,nx,pR,nu,nu,-1,2.0);
+  }
+    
+  if (pC!=NULL) {  /* C ny-by-nx exists */
+    /* Add (2x) C'*W*C to upper-left nx-by-nx block (only add in upper triangle) */
+    if (typW==TYP_SCALAR) { /* add sW*C'*C to block */
+      matopc_sub_assign_sym_scaled_ctc(pQstg,nd,0,pC,ny,nx,1,2.0*sW);
+    } else if (typW==TYP_VECTOR) { /* add C'*W*C, W=diag(w), w of length ny */
+      matopc_sub_assign_sym_scaled_ctwc(pQstg,nd,0,pC,ny,nx,pW,1,2.0);
+    } else { /* add C'*W*C, with W a general sym. matrix */
+      matopc_sub_assign_sym_scaled_ctwc_gen(pQstg,nd,0,pC,ny,nx,pW,1,2.0);
+    }
+    if (pD!=NULL) { /* D ny-by-nu exists */
+      /* General Q block should be 2*[Qx+C'*W*C,C'*W*D;D'*W*C,R+D'*W*D] */
+      if (typW==TYP_SCALAR) {
+        matopc_sub_assign_sym_scaled_ctc(pQstg,nd,nx,pD,ny,nu,1,2.0*sW);
+        /* add off-diagonal block C'*W*D */
+        matopc_sub_assign_scaled_ctd(pQstg,nd,0,nx,pC,ny,nx,pD,nu,1,2*sW);
+      } else if (typW==TYP_VECTOR) {
+        matopc_sub_assign_sym_scaled_ctwc(pQstg,nd,nx,pD,ny,nu,pW,1,2.0);
+        matopc_sub_assign_scaled_ctwd(pQstg,nd,0,nx,pC,ny,nx,pD,nu,pW,1,2.0);
+      } else {
+        matopc_sub_assign_sym_scaled_ctwc_gen(pQstg,nd,nx,pD,ny,nu,pW,1,2.0);
+        /* Assign (i.e. not add) upper-triangle off-diagonal block C'*W*D */
+        matopc_sub_assign_scaled_ctwd_gen(pQstg,nd,0,nx,pC,ny,nx,pD,nu,pW,-1,2.0);
+      }          
+      /* C,D exist; reference r already processed above */      
+    } else { /* D does not exist */
+      /* Q block should be 2*[Qx+C'*W*C,0;0,R]; it already is! */     
+      /* C exists; reference r already processed above */
+    }
+  } else {    /* no W,r or C or D */
+    /* Q block should be 2*[Qx,0;0,R]; and it already is! */
+  }
+}
+
 bool np_is_empty(PyArrayObject* a) {
   return (PyArray_SIZE(a) == 0);
 }
@@ -781,8 +844,58 @@ rempc_qpmpclti2f(PyObject *self,
     }
   }
 
+  /* Cstg=[-A,-B] */
+  matopc_sub_assign(pCstg,nx,nd,0,0,pA,nx,nx,-1);
+  matopc_sub_assign(pCstg,nx,nd,0,nx,pB,nx,nu,-1);
+  if (ns > 0) matopc_sub_assign_zeros(pCstg,nx,nd,0,nx+nu,nx,ns); /* [-A,-B,0] needed here */
+    
+  /* Dstg=[eye(nx),zeros(nx,nu)] */
+  matopc_zeros(pDstg,nx,nd);
+  matopc_sub_assign_diag_scalar(pDstg,nx,nd,0,0,1.0,nx,-1);
+    
+  /* C0=[I,0;-A,-B] */
+  matopc_zeros(pCstg0,2*nx,nd);
+  matopc_sub_assign_diag_scalar(pCstg0,2*nx,nd,0,0,1.0,nx,-1);
+  matopc_sub_assign(pCstg0,2*nx,nd,nx,0,pCstg,nx,nd,+1); /* Do not change sign again! */
+    
+  /* D1=[0,0;I,0] */
+  matopc_zeros(pDstg1,2*nx,nd);
+  matopc_sub_assign_diag_scalar(pDstg1,2*nx,nd,nx,0,1.0,nx,-1);
+    
+  /* If there are no slack variables;
+   * the cost matrix is square symmetric with side = nx+nu.
+   * If there are slack avariables the cost matrix has side = nx+nu+ns.
+   * This dimension is stored in stage size: nd.
+   */
+
+  aux_compute_sym_cost_matrix(nd,nx,nu,ny,pQstg,typQ,sQ,pQ,typR,sR,pR,typW,sW,pW,pC,pD);
+    
+  /* Setup special stage cost matrix for last stage as needed */
+  if (hasTerminalQ > 0 && hasTerminalW == 0) {
+    /* create a Qn cost matrix which only need a new upper left block */
+    aux_compute_sym_cost_matrix(nd,nx,nu,ny,pQNstg,typQn,sQn,pQn,typR,sR,pR,typW,sW,pW,pC,pD);
+  } else if (hasTerminalQ == 0 && hasTerminalW > 0) {
+    /* use previous/common Q but need to recreate the rest of Qn */
+    aux_compute_sym_cost_matrix(nd,nx,nu,ny,pQNstg,typQ,sQ,pQ,typR,sR,pR,typWn,sWn,pWn,pC,pD);
+  } else if (hasTerminalQ > 0 && hasTerminalW > 0) {
+    /* both Qn and Wn are special; new stage cost from */
+    aux_compute_sym_cost_matrix(nd,nx,nu,ny,pQNstg,typQn,sQn,pQn,typR,sR,pR,typWn,sWn,pWn,pC,pD);
+  }
+    
+  /* May need to insert the slack cost on the bottom-right part of the diagonal */
+  if (ns > 0) {
+    /* insert diag(ps)*2.0 */
+    matopc_sub_assign_scaled_diag_vector(pQstg,nd,nd,nx+nu,nx+nu,pS,ns,-1,2.0);
+    if (hasTerminalQ > 0 || hasTerminalW > 0) {
+    	/* pQNstg update required too */
+    	matopc_sub_assign_scaled_diag_vector(pQNstg,nd,nd,nx+nu,nx+nu,pS,ns,-1,2.0);
+    }
+  }
+
+  // TODO: if very verbose; print out a stage matrix?
+
   // ...
-  // TODO: cost matrices, and signal vectors/matrices
+  // TODO: setup and solve problem!
   // ...
 
   /*
@@ -802,7 +915,7 @@ rempc_qpmpclti2f(PyObject *self,
     printf("inequalities: (hasF1,hasF2,nq,ns) = (%i,%i,%i,%i).\n", hasF1, hasF2, nq, ns);
   }
 
-  // TODO: continue direct port the MEX code qpmpclti2f.c using Python/numpy "equivalents" ...
+  // TBD: figure out how to build the output dict efficiently
 
   if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
