@@ -381,6 +381,15 @@ static PyObject*
 rempc_qpmpclti2f(PyObject *self, 
                  PyObject *args)
 {
+  #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+  fclk_timespec _tic1, _tic2;
+  fclk_timespec _toc1, _toc2;
+  #endif
+    
+  #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+  fclk_timestamp(&_tic1);
+  #endif
+
   problemInputObjects P;
   qpdatStruct qpDat;
   qpoptStruct qpOpt;
@@ -991,7 +1000,7 @@ rempc_qpmpclti2f(PyObject *self,
 
   #ifdef __CLUMSY_ASSERTIONS__
   if (kk != ni * (n + 1) || ll != nx * (n + 1))
-    ERRORMESSAGE("Eq. or ineq. sizing error(s)")
+    printf("Eq. or ineq. sizing error(s)\n");
   #endif
 
   /* Modify matrix pointer for the last stage if there is a special terminal cost matrix */
@@ -1011,15 +1020,107 @@ rempc_qpmpclti2f(PyObject *self,
   qpDat.nstg = n + 1;         /* qq=0..n; there are n+1 stages */
   qpDat.pstg = pStages;
 
-  // TODO: initialize solver, then solve!
-  // TBD: figure out how to build the output dict efficiently
+  if (!msqp_pdipm_init(&qpDat, qpOpt.verbosity))
+    ERRORMESSAGE("Failed to initialize working vectors memory buffer")
+    
+  /* Setup memory required for block Cholesky matrix factorizations.
+   * Both programs (with or without inequalities) use the same block
+   * Cholesky factorization program and can be initialized the same way.
+   * But the simpler program does use less working memory (not adjusted for).
+   */
+  if (!InitializePrblmStruct(&qpDat, 0x001|0x002|0x004, qpOpt.verbosity))
+    ERRORMESSAGE("Failed to initialize Cholesky working memory buffer(s)")
 
+  #ifdef __CLUMSY_ASSERTIONS__
+  if (qpDat.neq != qpDat.netot || qpDat.ndec != qpDat.ndtot)
+    printf("Eq. or ineq. sizing error(s)\n");
+  if (mm != qpDat.blkphsz)
+    printf("Phi blk buffer sizing mismatch\n");
+  #endif
+
+  int retcode = -1;
+  if (hasInequalities > 0) {
+    /* Full IPM required; equality and inequality constrained QP */
+    if (qpOpt.chol_update > 0) {
+      /* TODO: pre-factor the only two unique cost matrices (before modification) */
+      /* pCC1, pCC2 to be prepared with factorizations of pQstg and pQNstg (if it exists) */
+      /* then the stage meta-data should be updated accordingly... ptrL field */
+      retcode = CreateCholeskyCache(&qpDat, pCC1, pCC2, nd);
+      if (retcode != 0)
+        ERRORMESSAGE("Fatal block Cholesky factorization failure")
+    }
+
+    prblmClass = (ns > 0 ? 2 : 1);
+        
+    /* Slack extension or not; it is the same code invokation here */
+    #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+		fclk_timestamp(&_tic2);
+		#endif
+
+		retcode = msqp_pdipm_solve(&qpDat, &qpOpt, &qpRet); /* Call main PDIPM algorithm */
+
+		#ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+		fclk_timestamp(&_toc2);
+		#endif
+        
+    if (retcode != 0 && qpOpt.verbosity > 0)
+      printf("WARNING: main PDIPM solver did not converge\n");
+        
+  } else {
+    /* No need to use the full IPM iteration; equality-constrained QP only */    
+    prblmClass = 0;
+        
+    /* Always pre-factor the stage cost for the simplified solver.
+     * The simplified solver will force itself to use the Cholesky cache always.
+     * This is possible since the factors never need to be "updated".
+     */
+    if (qpOpt.chol_update > 0) {
+      retcode = CreateCholeskyCache(&qpDat, pCC1, pCC2, nd);
+      if (retcode != 0)
+        ERRORMESSAGE("Fatal block Cholesky factorization failure")
+    }
+
+    #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+    fclk_timestamp(&_tic2);
+    #endif
+
+    retcode = msqp_solve_niq(&qpDat, &qpOpt, &qpRet);  /* call KKT solver code */
+    
+    #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+    fclk_timestamp(&_toc2);
+    #endif
+        
+    if (retcode != 0 && qpOpt.verbosity > 0)
+      printf("WARNING: main PDIPM solver did not converge.\n");
+  }
+
+  /* retcode == 0 implies converged solution;
+     retcode == 1 implies not converged after max iters;
+     retcode < 0 implies Cholesky error
+   */
+
+  // *****
+  // TBD: figure out how to build the output dict efficiently
+  // *****
+
+  FreePrblmStruct(&qpDat, qpOpt.verbosity);
+  msqp_pdipm_free(&qpDat, qpOpt.verbosity);
+  sparseMatrixDestroy(&spJay);
+  sparseMatrixDestroy(&spDee);
   if (pStages != NULL) free(pStages);
   if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
+
+  #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
+  fclk_timestamp(&_toc1);
+  #endif
+
   Py_RETURN_NONE;
 
 offload_and_return_null:
+  msqp_pdipm_free(&qpDat, qpOpt.verbosity);
+  sparseMatrixDestroy(&spJay);
+  sparseMatrixDestroy(&spDee);
   if (pStages != NULL) free(pStages);
   if (pauxbuf != NULL) free(pauxbuf);
   offloadProblemInputs(&P);
