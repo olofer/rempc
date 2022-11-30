@@ -349,7 +349,7 @@ rempc_qpmpclti2f(PyObject *self,
     ERRORMESSAGE("Horizon is too short.")
 
   int nx, nu, ny, nq, ns = 0, nd, ni;
-  const double *pA, *pB, *pC, *pD; // "const" will prob. break
+  double *pA, *pB, *pC, *pD;
 
   int hasOutput = 0;            /* is C!=0 ? */
   int hasDirectTerm = 0;        /* is D!=0 ? */
@@ -372,7 +372,7 @@ rempc_qpmpclti2f(PyObject *self,
 
   double *pWn, *pQn;       /* used only with special terminal costs */
   int typWn, typQn;
-  double sWn, sQn, q0tmp;
+  double sWn, sQn; //, q0tmp;
 
   /* These are constructed aux. data matrices */
   double *pJ = NULL, *pCstg = NULL, *pDstg = NULL, *pQstg = NULL;
@@ -394,7 +394,7 @@ rempc_qpmpclti2f(PyObject *self,
   nx = PyArray_DIM((PyArrayObject *) P.A, 0);
   if (nx != PyArray_DIM((PyArrayObject *) P.A, 1))
     ERRORMESSAGE("System matrix A must be square")
-  pA = (const double *) PyArray_DATA((PyArrayObject *) P.A);
+  pA = (double *) PyArray_DATA((PyArrayObject *) P.A);
 
   // define pB and nu
   if (P.B == NULL)
@@ -402,14 +402,14 @@ rempc_qpmpclti2f(PyObject *self,
   if (nx != PyArray_DIM((PyArrayObject *) P.B, 0))
     ERRORMESSAGE("B and A must have same number of rows")
   nu = PyArray_DIM((PyArrayObject *) P.B, 1);
-  pB = (const double *) PyArray_DATA((PyArrayObject *) P.B);
+  pB = (double *) PyArray_DATA((PyArrayObject *) P.B);
 
   // setup pC and ny (if given)
   if (P.C != NULL) {
     if (nx != PyArray_DIM((PyArrayObject *) P.C, 1))
       ERRORMESSAGE("C and A must have same number of columns")
     ny = PyArray_DIM((PyArrayObject *) P.C, 0);
-    pC = (const double *) PyArray_DATA((PyArrayObject *) P.C);
+    pC = (double *) PyArray_DATA((PyArrayObject *) P.C);
     hasOutput = 1;
   } else {
     pC = NULL;
@@ -423,7 +423,7 @@ rempc_qpmpclti2f(PyObject *self,
       ERRORMESSAGE("D and C must have same number of rows")
     if (nu != PyArray_DIM((PyArrayObject *) P.D, 1))
       ERRORMESSAGE("D and B must have same number of columns")
-    pD = (const double *) PyArray_DATA((PyArrayObject *) P.D);
+    pD = (double *) PyArray_DATA((PyArrayObject *) P.D);
     hasDirectTerm = 1;
   } else {
     hasDirectTerm = 0;
@@ -528,6 +528,257 @@ rempc_qpmpclti2f(PyObject *self,
     
   if (bufofs != auxbufsz) {
     printf("WARNING: auxbufsz=%i, bufofs=%i\n", auxbufsz, bufofs);
+  }
+
+  if (hasInequalities > 0) {
+    if (P.f3 == NULL)
+      ERRORMESSAGE("f3 missing")
+
+    /* Check/read f3 nq-by-(n+1) data */
+    if (aux_read_signal_matrix((PyArrayObject *) P.f3, nq, n + 1, &typf3, &sf3, &pf3) != 1)
+      ERRORMESSAGE("f3 has inconsistent size")
+      /* NOTE: J may have significant sparsity.
+       * Typically there will only be a single element per row which is
+       * nonzero in J=[F1,F2] so this is important to handle efficiently.
+       */
+    if (hasSlackCost > 0) {
+      matopc_zeros(pJ, ni, nd);
+      if (hasF1 > 0) matopc_sub_assign(pJ, ni, nd, 0, 0, pF1, nq, nx, +1);
+      if (hasF2 > 0) matopc_sub_assign(pJ, ni, nd, 0, nx, pF2, nq, nu, +1);
+      /* ... assemble the rest ... indices for psc[.]>0.0: (nq+qq,nx+nu+qq)=-1*/
+      for (int ll = 0, qq = 0; qq < nq; qq++) {
+        if (psc[qq] > 0.0) {
+          pJ[ni * (nx + nu + ll) + (qq)] = -1.0;
+          pJ[ni * (nx + nu + ll) + (nq + ll)] = -1.0;
+          pS[ll] = psc[qq];
+          ll++;
+        }
+      }
+    } else {
+      /* Create J by copying submatrices into proper patches .. */
+      matopc_zeros(pJ, nq, nd);
+      if (hasF1 > 0) matopc_sub_assign(pJ, nq, nd, 0, 0, pF1, nq, nx, +1);
+      if (hasF2 > 0) matopc_sub_assign(pJ, nq, nd, 0, nx, pF2, nq, nu, +1);
+    }
+  }
+
+  /* Always check w (part of evolution equation); data should be
+   * a matrix of size nx-by-n ideally; but could also be scalar, vector
+   * or a transposed matrix.
+   */
+  if (P.w == NULL)
+    ERRORMESSAGE("w missing")
+  if (aux_read_signal_matrix((PyArrayObject *) P.w, nx, n, &typw, &sw, &pw) != 1)
+    ERRORMESSAGE("w has inconsistent size")
+
+  /* Check W if hasOutput */
+  if (hasOutput > 0) {
+    if (P.W == NULL)
+      ERRORMESSAGE("W missing")
+    if (aux_read_square_matrix((PyArrayObject *) P.W, ny, &typW, &sW, &pW) != 1)
+      ERRORMESSAGE("W has inconsistent size")
+    
+    if (P.r == NULL)
+      ERRORMESSAGE("r missing")
+    /* Field r should ideally be a ny-by-(n+1) matrix.
+     * It can also be a ny-vector interpreted as repeated n+1 times.
+     * Or it can be a scalar; assumed to fill up the full matrix.
+     * A transposed matrix (n+1)-by-ny is also allowed; if r does not
+     * fit any of the above sizes. 
+     */
+    if (aux_read_signal_matrix((PyArrayObject *) P.r, ny, n + 1, &typr, &sr, &pr) != 1)
+      ERRORMESSAGE("r has inconsistent size")
+    
+    /* Check whether special terminal cost matrix Wn is present among the arguments */
+    if (P.Wn != NULL) {
+      if (aux_read_square_matrix((PyArrayObject *) P.Wn, ny, &typWn, &sWn, &pWn) != 1)
+        ERRORMESSAGE("Wn has inconsistent size")
+      hasTerminalW = 1;
+    }
+  }
+
+  /* Check Qx always; must not be undefined */
+  if (P.Qx == NULL)
+    ERRORMESSAGE("Qx missing")
+  if (aux_read_square_matrix((PyArrayObject *) P.Qx, nx, &typQ, &sQ, &pQ) != 1)
+    ERRORMESSAGE("Qx has inconsistent size")
+    
+  /* Check R always; must not be undefined */
+  if (P.R == NULL)
+    ERRORMESSAGE("R missing")
+  if (aux_read_square_matrix((PyArrayObject *) P.R, nu, &typR, &sR, &pR) != 1)
+    ERRORMESSAGE("R has inconsistent size")
+    
+  /* Special terminal cost matrix Qxn exists? */
+  if (P.Qxn != NULL) {
+    if (aux_read_square_matrix((PyArrayObject *) P.Qxn, nx, &typQn, &sQn, &pQn) != 1)
+      ERRORMESSAGE("Qxn has inconsistent size")
+    hasTerminalQ = 1;
+  }
+
+  /* Setup big d vector */
+  matopc_copy(pvecd, px, nx, 1);
+  if (typw == TYP_SCALAR) {
+    for (int qq = nx; qq < nx * (n + 1); qq++) pvecd[qq] = sw;
+  } else if (typw == TYP_VECTOR) {
+    for (int qq = 0, ll = 0; qq < n; qq++, ll += nx) {
+      matopc_copy(&pvecd[nx + ll], pw, nx, 1);
+    }
+  } else if (typw == TYP_MATRIX) {
+    /*for (qq=0,ll=0;qq<n;qq++,ll+=nx) { matopc_copy(&pvecd[nx+ll],&pw[ll],nx,1); }*/
+    matopc_copy(&pvecd[nx], pw, nx, n);
+  } else {
+    /*matopc_zeros(pvecd,nx*(n+1),1);
+      mexErrMsgTxt("TYP_MATRIXT not yet supported @ d.");*/
+    matopc_copy_transpose(&pvecd[nx], pw, n, nx);
+  }
+  /* aux_print_array(pvecd,nx*(n+1),1); */
+    
+  /* Setup big q vector (also known as vector h).
+   * Start by expanding/rearranging to obtain a stacked vector of r.
+   */
+  matopc_zeros(pvecq, nd * (n + 1), 1);
+  matopc_zeros(pvecq0, (n + 1), 1);
+  if (hasOutput > 0) {
+    /* Setup a full-size reference stacked vector */ 
+    if (typr == TYP_SCALAR) {
+      /* Treat scalar sr as the vector ones(ny,1)*sr at each stage. */
+      for (int qq = 0; qq < ny * (n + 1); qq++) pvecr[qq] = sr;
+    } else if (typr == TYP_VECTOR) {
+      /* Use vector ny-by-1 pr for each stage. */
+      for (int qq = 0, ll = 0; qq < n + 1; qq++, ll += ny) {
+        matopc_copy(&pvecr[ll], pr, ny, 1);
+      }
+    } else if (typr == TYP_MATRIX) {
+      /* Each column in matrix ny-by-(n+1) pr is a unique reference vector */
+      matopc_copy(pvecr, pr, ny, n + 1);
+    } else {
+      /* Each row in matrix (n+1)-by-ny pr is a (transposed) unique reference vector */
+      matopc_copy_transpose(pvecr, pr, n + 1, ny);
+    }
+        
+    /* Save last reference vector if it needs to be used for modification of last stage below */
+    if (hasTerminalW > 0) {
+      matopc_copy(prtmp, &pvecr[n * ny], ny, 1); /* copy last ny-vector r(n) of pvecr to prtmp */
+    }
+
+    /* Apply in-place transformation r(i) <- -2*W*r(i) on the buffer pvecr */
+    /* Evaluate q0(i)=r(i)'*W*r(i) for each stage i=0..n; before the inplace op. (!) */
+    if (typW == TYP_SCALAR) {
+      int kk = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        double dd = 0.0;
+        for (int ll = 0; ll < ny; ll++)
+          dd += sW * pvecr[kk + ll] * pvecr[kk + ll];
+        pvecq0[qq] = dd;
+        kk += ny;
+      }
+      const double dd = -2.0 * sW;
+      for (int qq = 0; qq < ny * (n + 1); qq++) pvecr[qq] *= dd;
+    } else if (typW == TYP_VECTOR) {
+      int kk = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        double dd = 0.0;
+        for (int ll = 0; ll < ny; ll++)
+          dd += pW[ll] * pvecr[kk + ll] * pvecr[kk + ll];
+        pvecq0[qq] = dd;
+        kk += ny;
+      }
+      kk = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        for (int ll = 0; ll < ny; ll++) pvecr[kk++] *= (-2.0 * pW[ll]);
+      }
+    } else { /* TYP_MATRIX */
+      if (ny > MATOPC_TEMPARRAYSIZE)
+        ERRORMESSAGE("ERROR: ny>MATOPC_TEMPARRAYSIZE")
+      int kk = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        pvecq0[qq] = matopc_xtax_sym(pW, ny, &pvecr[kk]);
+        /* Multiply by general ny-by-ny matrix W */
+        matopc_inplace_scaled_ax(&pvecr[kk], pW, ny, ny, -2.0);
+        /* TODO: actually never access lower triangle of W */
+        /* ATTN: uses static temp. array of fixed size internally */
+        kk += ny;
+      }
+    }
+        
+    /* Need modification of linear cost term and offset for last stage if Wn exists */
+    if (hasTerminalW > 0) {
+      double q0tmp = 0.0;
+      /* evaluate q0n <- r(n)'*Wn*r(n) and r(n) <- -2*Wn*r(n) for usage later */
+      if (typWn == TYP_SCALAR) {
+        for (int ll = 0; ll < ny; ll++)
+          q0tmp += prtmp[ll] * prtmp[ll];
+        q0tmp *= sWn;
+        const double dd = -2.0 * sWn;
+        for (int ll = 0; ll < ny; ll++)
+          prtmp[ll] *= dd;
+      } else if (typWn == TYP_VECTOR) {
+        for (int ll = 0; ll < ny; ll++)
+          q0tmp += pWn[ll] * prtmp[ll] * prtmp[ll];
+        for (int ll = 0; ll < ny; ll++)
+          prtmp[ll] *= (-2.0 * pWn[ll]);
+      } else { /* TYP_MATRIX */
+        if (ny > MATOPC_TEMPARRAYSIZE)
+          ERRORMESSAGE("ERROR: ny>MATOPC_TEMPARRAYSIZE")
+        q0tmp = matopc_xtax_sym(pWn, ny, prtmp);
+        matopc_inplace_scaled_ax(prtmp, pWn, ny, ny, -2.0);
+        /* TODO: symmetrized version that never accessed lower part */
+      }
+      /* overwrite last vector in pvecr and last element in pvecq0 */
+      pvecq0[n] = q0tmp;
+      matopc_copy(&pvecr[n * ny], prtmp, ny, 1);
+    }
+        
+    /* Apply C' and D' transformations to obtain q(i) from W*r(i) vectors */
+    if (hasDirectTerm > 0) { /* q(i) = -2*[C';D']*W*r(i) */
+      int kk = 0; int ll = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        matopc_atx(&pvecq[kk], pC, ny, nx, &pvecr[ll]);
+        matopc_atx(&pvecq[kk + nx], pD, ny, nu, &pvecr[ll]);
+        kk += nd; ll += ny;
+      }
+    } else { /* q(i) = -2*[C';zeros(nu,ny)]*W*r(i) */
+      int kk = 0; int ll = 0;
+      for (int qq = 0; qq < n + 1; qq++) {
+        matopc_atx(&pvecq[kk], pC, ny, nx, &pvecr[ll]);
+        kk += nd; ll += ny;
+      }
+    }
+
+    /*mexPrintf("[pvecq0-new]\n"); 
+    aux_print_array(pvecq0,n+1,1);*/    
+  } /* end if (hasOutput) */
+
+  /* NOTE: pvecf must be padded correctly when ns>0 */
+  /* Setup big f vector; length of pvecf is ni*(n+1), with ni=nq+ns, where ns might be zero */
+  if (hasInequalities > 0) {
+    matopc_zeros(pvecf, ni * (n + 1), 1);
+    if (typf3 == TYP_SCALAR) {
+      if (ns>0) {
+	      for (int qq = 0, ll = 0; qq < n + 1; qq++, ll += ni) {
+	        vecop_assign(&pvecf[ll], nq, sf3);
+  	    }
+      } else {
+        /*for (qq=0;qq<nq*(n+1);qq++) pvecf[qq]=sf3;*/
+        vecop_assign(&pvecf[0], nq * (n + 1), sf3);
+      }
+    } else if (typf3 == TYP_VECTOR) {
+      for (int qq = 0, ll = 0; qq < n + 1; qq++, ll += ni) {
+        matopc_copy(&pvecf[ll], pf3, nq, 1);
+      }
+    } else if (typf3 == TYP_MATRIX) {
+      for (int qq = 0, ll = 0, kk = 0; qq < n + 1; qq++, ll += ni, kk += nq) {
+        matopc_copy(&pvecf[ll], &pf3[kk], nq, 1);
+      }
+    } else {
+      /*mexErrMsgTxt("TYP_MATRIXT not yet supported @ f.");*/
+      /* NOTE: should read in as if pf3 is a column-major (n+1)-by-nq matrix */
+      for (int qq = 0, ll = 0; qq < n + 1; qq++, ll += ni) {
+        for (int kk = 0; kk < nq; kk++)
+          pvecf[ll + kk] = pf3[qq + kk * (n + 1)];
+      }
+    }
   }
 
   // ...
