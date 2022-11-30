@@ -34,5 +34,6 @@ print('isfortran(C) = {}'.format(np.isfortran(P['C'])))
 
 R = rempc.qpmpclti2f(P, O)
 
-assert R is None
+#assert R is None
+print(R)
 print('reached end of {}'.format(__file__))

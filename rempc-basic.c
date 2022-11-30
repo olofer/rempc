@@ -366,6 +366,39 @@ void print_options_struct(const qpoptStruct* qpo) {
   printf("blas_suite  = %i\n", qpo->blas_suite);
 }
 
+PyObject* createReturnDict(int retcode,
+                           int problemClass,
+                           const qpretStruct* qpRet,
+                           int n,
+                           int nu,
+                           int numReturnStepsU,
+                           int nx,
+                           int numReturnStepsX,
+                           int ns,
+                           int numReturnStepsS)
+{
+  const char *prblm_class_names[3] = {"qp-eq", "qp-eq-ineq", "qp-eq-ineq-slack"};
+  PyObject* newDict = PyDict_New();
+  if (newDict == NULL) return newDict;
+  PyDict_SetItemString(newDict, "isconverged", PyLong_FromLong(retcode == 0 ? 1 : 0));
+  PyDict_SetItemString(newDict, "cholfail", PyLong_FromLong(retcode < 0 ? 1 : 0));
+  if (qpRet == NULL) return newDict;
+  PyDict_SetItemString(newDict, "iters", PyLong_FromLong(qpRet->iters));
+  PyDict_SetItemString(newDict, "fxopt", PyFloat_FromDouble(qpRet->fxopt));
+  PyDict_SetItemString(newDict, "fxofs", PyFloat_FromDouble(qpRet->fxofs));
+  const npy_intp inftuple_dims[] = {4};
+  PyObject* inftuple = PyArray_SimpleNew(1, inftuple_dims, NPY_DOUBLE);
+  memcpy((double *) PyArray_DATA((PyArrayObject *) inftuple), qpRet->inftuple, 4 * sizeof(double));
+  PyDict_SetItemString(newDict, "inftuple", inftuple);
+  PyDict_SetItemString(newDict, "qpclass", PyUnicode_FromString(prblm_class_names[problemClass]));
+  if (retcode == 0) {
+    // remember to never create some of the keys unless solution is converged
+    // and here we need to create Fortran style numpy arrays if the MEX code should work "as is"
+    // ..
+  }
+  return newDict;
+}
+
 /*** MODULE ERRORS OBJECT ***/
 
 static PyObject *ModuleError;
@@ -1099,9 +1132,16 @@ rempc_qpmpclti2f(PyObject *self,
      retcode < 0 implies Cholesky error
    */
 
-  // *****
-  // TBD: figure out how to build the output dict efficiently
-  // *****
+  PyObject* returnDict = createReturnDict(retcode,
+                                          prblmClass,
+                                          &qpRet,
+                                          n,
+                                          nu,
+                                          numReturnStepsU,
+                                          nx,
+                                          numReturnStepsX,
+                                          ns,
+                                          numReturnStepsS);
 
   FreePrblmStruct(&qpDat, qpOpt.verbosity);
   msqp_pdipm_free(&qpDat, qpOpt.verbosity);
@@ -1115,7 +1155,7 @@ rempc_qpmpclti2f(PyObject *self,
   fclk_timestamp(&_toc1);
   #endif
 
-  Py_RETURN_NONE;
+  return returnDict;
 
 offload_and_return_null:
   msqp_pdipm_free(&qpDat, qpOpt.verbosity);
