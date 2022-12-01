@@ -4,7 +4,7 @@
 
 // FIXME: return elapsed clocks
 //        set a "complete" docstring (from 2e matlab program header)
-//        develop a Python test program (port of afti16 "benchmark"... and the masses.. and the triple-integral)
+//        develop better Python test programs (masses, F-16)
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -222,18 +222,31 @@ bool np_is_vector(PyArrayObject* a,
 
 // Return NULL if no key in dict, or it is there but not a numpy array.
 // Optionally require a specific number of array dimensions.
+// Optionally issue warning if keyname exists but is incompatible.
 // Return array object as Fortran layout (possibly converted).
 PyObject* 
 get_numpy_array(PyObject* dict, 
                 const char* keyname, 
-                int requireDims)
+                int requireDims,
+                bool warnIfIncompatible)
 {
   PyObject* item = PyDict_GetItemString(dict, keyname);
   if (item == NULL) return NULL;
-  if (!PyArray_Check(item)) return NULL;
-  if (requireDims > 0)
-    if (PyArray_NDIM((PyArrayObject *) item) != requireDims)
+  if (!PyArray_Check(item)) {
+    if (warnIfIncompatible)
+      printf("WARNING: key \"%s\" exists but is not a Numpy array. It will be ignored.\n", 
+             keyname);
+    return NULL;
+  }
+  if (requireDims > 0) {
+    if (PyArray_NDIM((PyArrayObject *) item) != requireDims) {
+      if (warnIfIncompatible)
+        printf("WARNING: key \"%s\" exists and is a Numpy array but has ndim != %i. It will be ignored.\n", 
+               keyname, 
+               requireDims);
       return NULL;
+    }
+  }
   PyObject *arr = PyArray_FROM_OTF(item, 
                                    NPY_DOUBLE, 
                                    NPY_ARRAY_IN_ARRAY|NPY_ARRAY_F_CONTIGUOUS|NPY_ARRAY_ALIGNED);
@@ -241,38 +254,50 @@ get_numpy_array(PyObject* dict,
 }
 
 int get_integer_from_dict(PyObject* dict, 
-                          const char* keyname)
+                          const char* keyname,
+                          bool warnIfIncompatible)
 {
   PyObject* item = PyDict_GetItemString(dict, keyname);
   if (item == NULL) return 0;
-  if (!PyLong_Check(item)) return 0;
+  if (!PyLong_Check(item)) {
+    if (warnIfIncompatible)
+      printf("WARNING: key \"%s\" exists but is not a a Python integer. It will be ignored.\n", 
+             keyname);
+    return 0;
+  }
   return ((int) PyLong_AsLong(item));
 }
 
 // grab numpy array object, requiring shape defined for 2 dimensions, and Fortran memory layout
-void loadProblemInputs(PyObject* dict, problemInputObjects* pIO) {
+void loadProblemInputs(PyObject* dict, 
+                       problemInputObjects* pIO) 
+{
+  const bool warnIfIncompatible = true;  // This helps detecting input data mistakes
+  const int requiredNdim = 2;
+
   memset(pIO, 0, sizeof(problemInputObjects));
-  pIO->n   = get_integer_from_dict(dict, "n");  // set to 0 if failing to read integer object by key name
-  pIO->A   = get_numpy_array(dict, "A", 2);     // pointers are set to NULL if failure to read by key name
-  pIO->B   = get_numpy_array(dict, "B", 2);
-  pIO->C   = get_numpy_array(dict, "C", 2);
-  pIO->D   = get_numpy_array(dict, "D", 2);
-  pIO->Qx  = get_numpy_array(dict, "Qx", 2);
-  pIO->W   = get_numpy_array(dict, "W", 2);
-  pIO->R   = get_numpy_array(dict, "R", 2);
-  pIO->F1  = get_numpy_array(dict, "F1", 2);
-  pIO->F2  = get_numpy_array(dict, "F2", 2);
-  pIO->f3  = get_numpy_array(dict, "f3", 2);
-  pIO->w   = get_numpy_array(dict, "w", 2);
-  pIO->r   = get_numpy_array(dict, "r", 2);
-  pIO->x   = get_numpy_array(dict, "x", 2);
-  pIO->Qxn = get_numpy_array(dict, "Qxn", 2);
-  pIO->Wn  = get_numpy_array(dict, "Wn", 2);
-  pIO->sc  = get_numpy_array(dict, "sc", 2);
-  pIO->xreturn = get_integer_from_dict(dict, "xreturn"); // 0 if not provided (or not integer)
-  pIO->ureturn = get_integer_from_dict(dict, "ureturn");
-  pIO->sreturn = get_integer_from_dict(dict, "sreturn");
-  return;
+
+  pIO->n       = get_integer_from_dict(dict, "n",       warnIfIncompatible);
+  pIO->xreturn = get_integer_from_dict(dict, "xreturn", warnIfIncompatible);
+  pIO->ureturn = get_integer_from_dict(dict, "ureturn", warnIfIncompatible);
+  pIO->sreturn = get_integer_from_dict(dict, "sreturn", warnIfIncompatible);
+
+  pIO->A   = get_numpy_array(dict, "A",   requiredNdim, warnIfIncompatible); 
+  pIO->B   = get_numpy_array(dict, "B",   requiredNdim, warnIfIncompatible);
+  pIO->C   = get_numpy_array(dict, "C",   requiredNdim, warnIfIncompatible);
+  pIO->D   = get_numpy_array(dict, "D",   requiredNdim, warnIfIncompatible);
+  pIO->Qx  = get_numpy_array(dict, "Qx",  requiredNdim, warnIfIncompatible);
+  pIO->W   = get_numpy_array(dict, "W",   requiredNdim, warnIfIncompatible);
+  pIO->R   = get_numpy_array(dict, "R",   requiredNdim, warnIfIncompatible);
+  pIO->F1  = get_numpy_array(dict, "F1",  requiredNdim, warnIfIncompatible);
+  pIO->F2  = get_numpy_array(dict, "F2",  requiredNdim, warnIfIncompatible);
+  pIO->f3  = get_numpy_array(dict, "f3",  requiredNdim, warnIfIncompatible);
+  pIO->w   = get_numpy_array(dict, "w",   requiredNdim, warnIfIncompatible);
+  pIO->r   = get_numpy_array(dict, "r",   requiredNdim, warnIfIncompatible);
+  pIO->x   = get_numpy_array(dict, "x",   requiredNdim, warnIfIncompatible);
+  pIO->Qxn = get_numpy_array(dict, "Qxn", requiredNdim, warnIfIncompatible);
+  pIO->Wn  = get_numpy_array(dict, "Wn",  requiredNdim, warnIfIncompatible);
+  pIO->sc  = get_numpy_array(dict, "sc",  requiredNdim, warnIfIncompatible);
 }
 
 // All strict matrices (both m,n > 1) are required to have Fortran memory layout (if m or n is 1, it doesn't matter)

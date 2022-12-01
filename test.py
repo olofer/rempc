@@ -45,6 +45,7 @@ if __name__ == '__main__':
     R = rempc.qpmpclti2f(P, O)
     assert isinstance(R, dict)
     print(R.keys())
+    assert R['isconverged'] == 1
 
   if args.tripleint:
     from scipy.signal import cont2discrete
@@ -84,5 +85,6 @@ if __name__ == '__main__':
     R = rempc.qpmpclti2f(P, O)
     assert isinstance(R, dict)
     print(R.keys())
+    assert R['isconverged'] == 1
 
   print('reached end of {}'.format(__file__))
