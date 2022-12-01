@@ -19,4 +19,7 @@ rm -rf dist
 rm -rf rempc_package*.egg-info
 python3 setup.py build
 python3 setup.py install --user
-python3 test.py
+
+# smoke tests of (re)installed package
+python3 test.py --smoke && echo '*** --smoke OK ***'
+python3 test.py --tripleint && echo '*** --tripleint OK ***'
