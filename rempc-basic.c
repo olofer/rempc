@@ -2,10 +2,9 @@
   Remake of qpmpclti2f.c MEX source code as Python C extension.
 */
 
-// FIXME: fxoft output key
-//        return elapsed clocks
+// FIXME: return elapsed clocks
 //        set a "complete" docstring (from 2e matlab program header)
-//        develop a Python test program (port of afti16 "benchmark"...)
+//        develop a Python test program (port of afti16 "benchmark"... and the masses.. and the triple-integral)
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -391,7 +390,8 @@ PyObject* createReturnDict(int retcode,
                            int nx,
                            int numReturnStepsX,
                            int ns,
-                           int numReturnStepsS)
+                           int numReturnStepsS,
+                           const double* pS)
 {
   const char *prblm_class_names[3] = {"qp-eq", "qp-eq-ineq", "qp-eq-ineq-slack"};
   PyObject* newDict = PyDict_New();
@@ -410,20 +410,6 @@ PyObject* createReturnDict(int retcode,
   if (retcode == 0) {
     const int nd = nx + nu + ns;
     const double* px = qpRet->x;
-
-    /* Evaluate the part of the cost that comes from the slack terms only;
-       Return it in the report field "fxoft"; it is very easy to compute 
-       due to the implicit diagonal structure of the S matrix.
-     */
-    /*if (ns>0) {
-      dd=0.0; kk=nx+nu;
-      for (qq=0;qq<n+1;qq++) {
-      	pdd=(double *)&qpRet.x[kk];
-      	for (ll=0;ll<ns;ll++) dd+=pdd[ll]*pS[ll]*pdd[ll];
-      	kk+=nd;
-      }
-      mxSetFieldByNumber(REPSTRUCT,0,REP_FXOFT,mxCreateDoubleScalar(dd));
-    }*/
 
     if (numReturnStepsU > 0) {
       if (numReturnStepsU > n + 1) numReturnStepsU = n + 1; /* clip if needed */
@@ -468,6 +454,22 @@ PyObject* createReturnDict(int retcode,
         kk += nd;
       }
       PyDict_SetItemString(newDict, "straj", straj_object);
+    }
+
+    /* Evaluate the part of the cost that comes from the slack terms only;
+       Return it in the report field "fxoft"; it is very easy to compute
+       due to the implicit diagonal structure of the S matrix.
+     */
+    if (ns > 0 && pS != NULL) {
+      double dd = 0.0;
+      int kk = nx + nu;
+      for (int qq = 0; qq < n + 1; qq++) {
+        const double* pdd = (const double *) &(px[kk]);
+        for (int ll = 0; ll < ns; ll++)
+          dd += pdd[ll] * pS[ll] * pdd[ll];
+        kk += nd;
+      }
+      PyDict_SetItemString(newDict, "fxoft", PyFloat_FromDouble(dd));
     }
   }
 
@@ -1216,7 +1218,8 @@ rempc_qpmpclti2f(PyObject *self,
                                           nx,
                                           numReturnStepsX,
                                           ns,
-                                          numReturnStepsS);
+                                          numReturnStepsS,
+                                          pS);
 
   FreePrblmStruct(&qpDat, qpOpt.verbosity);
   msqp_pdipm_free(&qpDat, qpOpt.verbosity);
