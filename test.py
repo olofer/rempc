@@ -9,8 +9,10 @@ import rempc
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
 
-  parser.add_argument('--smoke', action = 'store_true')
-  parser.add_argument('--tripleint', action = 'store_true')
+  parser.add_argument('--smoke', action = 'store_true') 
+  parser.add_argument('--tripleint', action = 'store_true') 
+  parser.add_argument('--horizon', type = int, default = 200) 
+  # parser.add_argument('--profile-solver', type = int, default = -1) 
 
   args = parser.parse_args()
 
@@ -57,7 +59,7 @@ if __name__ == '__main__':
     Ts = 0.1
     dtsys = cont2discrete((Ac, Bc, Cc, Dc), Ts)
 
-    N = 200
+    N = args.horizon
 
     O = rempc.options_qpmpclti2f()
     O['verbosity'] = int(1)
@@ -86,5 +88,8 @@ if __name__ == '__main__':
     assert isinstance(R, dict)
     print(R.keys())
     assert R['isconverged'] == 1
+
+    #if args.profile_solver >= 5:
+    #  None
 
   print('reached end of {}'.format(__file__))

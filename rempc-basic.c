@@ -2,7 +2,7 @@
   Remake of qpmpclti2f.c MEX source code as Python C extension.
 */
 
-// FIXME: return elapsed clocks
+// FIXME: basic check of solver scaling with n for tripleint system in test.py
 //        set a "complete" docstring (from 2e matlab program header)
 //        develop better Python test programs (masses, F-16)
 
@@ -1256,6 +1256,21 @@ rempc_qpmpclti2f(PyObject *self,
 
   #ifdef __COMPILE_WITH_INTERNAL_TICTOC__
   fclk_timestamp(&_toc1);
+  PyDict_SetItemString(returnDict, 
+                       "totalclock", 
+                       PyFloat_FromDouble(fclk_delta_timestamps(&_tic1, &_toc1)));
+  PyDict_SetItemString(returnDict, 
+                       "solveclock", 
+                       PyFloat_FromDouble(fclk_delta_timestamps(&_tic2, &_toc2)));
+  fclk_get_resolution(&_tic1);
+  PyDict_SetItemString(returnDict, 
+                       "clockresol", 
+                       PyFloat_FromDouble(fclk_time(&_tic1)));
+  if (qpRet.cholytime >= 0.0) { /* set to -1 if unused */
+    PyDict_SetItemString(returnDict, 
+                         "cholyclock", 
+                         PyFloat_FromDouble(qpRet.cholytime));
+  }
   #endif
 
   return returnDict;
