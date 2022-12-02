@@ -1,5 +1,5 @@
 # rempc
-Standalone model-predictive control (MPC) codes. Plain `C` solver with (i) `MEX` interface (known to work in both `Octave` and `Matlab`) and (ii) `Python/numpy` interface. The `C` solver has complexity linear in the length of the horizon.
+Standalone model-predictive control (MPC) codes. Includes a library-free plain `C` solver with (i) `MEX` interface (known to work in both `Octave` and `Matlab`) and (ii) `Python/numpy` interface. The `C` solver has complexity linear in the length of the horizon.
 
 ## Build/check Python interface (not fully tested)
 Requires `numpy` (tests also requires `scipy`). Run the following.
@@ -19,8 +19,8 @@ See script `test.py` for example usage of the basic MPC code. Specifically the c
 ## Build/test Octave from shell
 Run `./test-octave-headless.sh` to compile with `mkoctfile` and run a basic test program (assuming Linux or WSL with `Octave` installed). 
 
-## Build from within Octave or Matlab
-To rebuild the `MEX` program from within either `Matlab` or `Octave`, just type `build_qpmpclti2f` in the prompt.
+## Build/demo from within Octave or Matlab
+To rebuild the `MEX` program from within either `Matlab` or `Octave`, just type `build_qpmpclti2f` in the prompt. The scripts `test_mpc_*.m` contains demonstrations and tests of the solver. In `Octave` you may need to run `pkg load control` before running the demos. In `Matlab` you may need to have the control systems toolbox. The "reference" program `qpmpclti2e.m` is largely equivalent to the `C` solver `qpmpclti2f.c` (but much slower).
 
 ## Standalone tests of solver components
 ```
