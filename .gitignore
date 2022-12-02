@@ -4,3 +4,5 @@ build/*
 testbuild/*
 dist/*
 *.egg-info/*
+test-*.pdf
+test-*.png
