@@ -2,7 +2,7 @@
 Standalone model-predictive control (MPC) codes. Includes a library-free plain `C` solver with (i) `MEX` interface (known to work in both `Octave` and `Matlab`) and (ii) `Python/numpy` interface. The `C` solver has complexity linear in the length of the horizon.
 
 ## Build/check Python interface (not fully tested)
-Requires `numpy` (tests also requires `scipy`). Run the following.
+Requires `numpy` (tests also require `scipy`). Run the following.
 ```
 python3 setup.py install --user
 python3 test.py --smoke
