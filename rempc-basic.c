@@ -2,8 +2,7 @@
   Remake of qpmpclti2f.c MEX source code as Python C extension.
 */
 
-// FIXME: basic check of solver scaling with n for tripleint system in test.py
-//        set a "complete" docstring (from 2e matlab program header)
+// FIXME: set a "complete" docstring (from 2e matlab program header; and it add to the README.md)
 //        develop better Python test programs (masses, F-16)
 
 #define PY_SSIZE_T_CLEAN
@@ -552,16 +551,6 @@ rempc_qpmpclti2f(PyObject *self,
   if (qpOpt.verbosity > 1)
     print_options_struct(&qpOpt);
 
-  loadProblemInputs(problem_dict, &P);
-
-  if (!allFortranProblemInputs(&P))
-    ERRORMESSAGE("All available input arrays are not Fortran")
-
-  // TBD: if super-verbose, make an explicit test of the strides of all matrices; are they exactly as expected for Fortran layout?
-
-  if (P.n + 1 < __MULTISOLVER_MINIMUM_STAGES)
-    ERRORMESSAGE("Horizon is too short.")
-
   int nx, nu, ny, nq, ns = 0, nd, ni;
   double *pA, *pB, *pC, *pD;
 
@@ -601,6 +590,14 @@ rempc_qpmpclti2f(PyObject *self,
 
   /* These are constructed aux. data vectors */
   double *pvecd = NULL, *pvecq = NULL, *pvecf = NULL, *pvecq0 = NULL, *pvecr = NULL, *prtmp = NULL;
+
+  loadProblemInputs(problem_dict, &P);
+
+  if (!allFortranProblemInputs(&P))
+    ERRORMESSAGE("All available input arrays are not Fortran")
+
+  if (P.n + 1 < __MULTISOLVER_MINIMUM_STAGES)
+    ERRORMESSAGE("Horizon is too short.")
 
   // define pA and nx
   if (P.A == NULL)
