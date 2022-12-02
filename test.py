@@ -2,7 +2,7 @@
 # Basic (smoke) tests of the rempc package
 #
 # Basic profiling demo like so:
-#   python3 test.py --profile-solver --tripleint -horizon 250
+#   python3 test.py --profile-solver --tripleint --horizon 250
 #
 
 import argparse
@@ -16,6 +16,7 @@ if __name__ == '__main__':
   parser.add_argument('--tripleint', action = 'store_true') 
   parser.add_argument('--horizon', type = int, default = 200) 
   parser.add_argument('--profile-solver', action = 'store_true') 
+  parser.add_argument('--repeats', type = int, default = 20)
   parser.add_argument('--figext', type = str, default = 'pdf', help = 'figure file extension (e.g. pdf or png)')
   parser.add_argument('--dpi', type = float, default = 250.0, help = 'print to file PNG option')
 
@@ -100,16 +101,16 @@ if __name__ == '__main__':
 
     if args.profile_solver:
       O['verbosity'] = int(0)
-      numRepeats = 20
+      P['xreturn'] = int(0)
       nvec = np.arange(2, args.horizon + 1)
       clocks = np.tile(np.nan, (len(nvec), 2))
       print('profiling solver performance vs horizon length n={}..{}'.format(nvec[0], nvec[-1]))
       for k in range(len(nvec)):
         nk = int(nvec[k])
         P['n'] = nk 
-        Rk = [rempc.qpmpclti2f(P, O) for _ in range(numRepeats)]
+        Rk = [rempc.qpmpclti2f(P, O) for _ in range(args.repeats)]
         all_good = [rk['isconverged'] for rk in Rk]
-        assert np.sum(all_good) == numRepeats
+        assert np.sum(all_good) == args.repeats
         idx = np.argmin([rk['totalclock'] for rk in Rk])
         clocks[k, 0] = [rk['totalclock'] for rk in Rk][idx]
         clocks[k, 1] = [rk['solveclock'] for rk in Rk][idx]
@@ -117,7 +118,7 @@ if __name__ == '__main__':
       plt.plot(nvec, 1.0e3 * clocks[:, 0], label = 'total (solve + overhead)')
       plt.plot(nvec, 1.0e3 * clocks[:, 1], label = 'solve only')
       plt.xlabel('length of horizon')
-      plt.ylabel('wall clock [ms] (best of {} repeats)'.format(numRepeats))
+      plt.ylabel('wall clock [ms] (best of {} repeats)'.format(args.repeats))
       plt.grid(True)
       plt.title('MPC solver profiling (nx={}, nu={}, ny={}, ni={})'.format(P['A'].shape[0], 
                                                                            P['B'].shape[1], 
