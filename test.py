@@ -3,6 +3,7 @@
 #
 # Basic profiling demo like so:
 #   python3 test.py --profile-solver --tripleint --horizon 250
+#   python3 test.py --profile-solver --tripleint --horizon 500 --repeats 50
 #
 
 import argparse
@@ -103,7 +104,8 @@ if __name__ == '__main__':
       O['verbosity'] = int(0)
       P['xreturn'] = int(0)
       nvec = np.arange(2, args.horizon + 1)
-      clocks = np.tile(np.nan, (len(nvec), 2))
+      clocks = np.tile(np.nan, (len(nvec), 3))
+      iters = np.tile(np.nan, (len(nvec), ))
       print('profiling solver performance vs horizon length n={}..{}'.format(nvec[0], nvec[-1]))
       for k in range(len(nvec)):
         nk = int(nvec[k])
@@ -114,9 +116,12 @@ if __name__ == '__main__':
         idx = np.argmin([rk['totalclock'] for rk in Rk])
         clocks[k, 0] = [rk['totalclock'] for rk in Rk][idx]
         clocks[k, 1] = [rk['solveclock'] for rk in Rk][idx]
+        clocks[k, 2] = [rk['cholyclock'] for rk in Rk][idx]
+        iters[k] = float(Rk[0]['iters'])
       
       plt.plot(nvec, 1.0e3 * clocks[:, 0], label = 'total (solve + overhead)')
-      plt.plot(nvec, 1.0e3 * clocks[:, 1], label = 'solve only')
+      plt.plot(nvec, 1.0e3 * clocks[:, 1], label = 'total solve only')
+      plt.plot(nvec, 1.0e3 * clocks[:, 2], label = 'factorization time')
       plt.xlabel('length of horizon')
       plt.ylabel('wall clock [ms] (best of {} repeats)'.format(args.repeats))
       plt.grid(True)
@@ -125,6 +130,11 @@ if __name__ == '__main__':
                                                                            P['C'].shape[0], 
                                                                            P['f3'].size))
       plt.legend()
+      plt.text(0.90, 0.10, 
+               'iterations min..max = {:.0f}..{:.0f}'.format(np.min(iters), np.max(iters)), 
+               horizontalalignment = 'right', 
+               verticalalignment = 'center', 
+               transform = plt.gca().transAxes)
       plt.tight_layout()
       plt.savefig('test-profile-{}.{}'.format(args.horizon, args.figext), dpi = args.dpi)
       plt.close()
