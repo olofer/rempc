@@ -11,8 +11,10 @@ python3 test.py --smoke
 
 See script `test.py` for example usage of the basic MPC code. Specifically the code executed under the `--tripleint` option. The solver performance can be visualized by running e.g. `python3 test.py --profile-solver --tripleint --horizon 250`. The plot (generated PDF) should show the wall clock required to solve the MPC program as a function of the number of time steps in the horizon.
 
+### Jupyter notebook demonstrations
+- `test-mpc-afti16-slack.ipynb` (feedback control of unstable $2\times 2$ plant with hard and soft constraints)
+
 ### Not yet implemented
-- Better demonstration programs
 - Interface for LTV problems
 - Interface for MHE problems
 
