@@ -14,6 +14,8 @@ See script `test.py` for example usage of the basic MPC code. Specifically the c
 ### Jupyter notebook demonstrations
 - `test-mpc-afti16-slack.ipynb` (feedback control of unstable $2\times 2$ plant with hard and soft constraints)
 
+To run the above (within WSL), type `jupyter notebook --no-browser`, and then copy the link displayed into a new tab in any standard browser.
+
 ### Not yet implemented
 - Interface for LTV problems
 - Interface for MHE problems
