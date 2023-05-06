@@ -11,14 +11,13 @@ python3 test.py --smoke
 
 See script `test.py` for example usage of the basic MPC code. Specifically the code executed under the `--tripleint` option. The solver performance can be visualized by running e.g. `python3 test.py --profile-solver --tripleint --horizon 250`. The plot (generated PDF) should show the wall clock required to solve the MPC program as a function of the number of time steps in the horizon.
 
+### WIP: time-varying interface
+Ongoing with this branch: **linear time-varying** generic interface. Pass in data matrices and tensors for a generic multistage QP.
+
 ### Jupyter notebook demonstrations
 - `test-mpc-afti16-slack.ipynb` (feedback control of unstable $2\times 2$ plant with hard and soft constraints)
 
 To run the above (within WSL), type `jupyter notebook --no-browser`, and then copy the link displayed into a new tab in any standard browser.
-
-### Not yet implemented
-- Interface for LTV problems
-- Interface for MHE problems
 
 ## Build/test Octave from shell
 Run `./test-octave-headless.sh` to compile with `mkoctfile` and run a basic test program (assuming Linux or WSL with `Octave` installed). 
